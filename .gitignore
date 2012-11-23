@@ -1,0 +1,10 @@
+Makefile.in
+.autotools
+.cproject
+*.swp
+.project
+autom4te.cache
+config.guess
+config.log
+config.sub
+configure
