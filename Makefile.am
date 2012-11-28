@@ -1,1 +1,2 @@
+CFLAGS = -Wall
 SUBDIRS=src

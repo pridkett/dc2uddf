@@ -1,18 +1,18 @@
-/* 
+/*
  * libdivecomputer
- * 
+ *
  * Copyright (C) 2008 Jef Driesen
- * 
+ *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
- * 
+ *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
@@ -36,18 +36,6 @@ static unsigned char g_lastchar = '\n';
 	#include <sys/time.h>
 	static struct timeval g_timestamp;
 #endif
-
-void
-logfunc (dc_context_t *context, dc_loglevel_t loglevel, const char *file, unsigned int line, const char *function, const char *msg, void *userdata)
-{
-    const char *loglevels[] = {"NONE", "ERROR", "WARNING", "INFO", "DEBUG", "ALL"};
-
-    if (loglevel == DC_LOGLEVEL_ERROR || loglevel == DC_LOGLEVEL_WARNING) {
-        message ("%s: %s [in %s:%d (%s)]\n", loglevels[loglevel], msg, file, line, function);
-    } else {
-        message ("%s: %s\n", loglevels[loglevel], msg);
-    }
-}
 
 int message (const char* fmt, ...)
 {
@@ -103,4 +91,16 @@ void message_set_logfile (const char* filename)
 		gettimeofday (&g_timestamp, NULL);
 #endif
 	}
+}
+
+void
+logfunc (dc_context_t *context, dc_loglevel_t loglevel, const char *file, unsigned int line, const char *function, const char *msg, void *userdata)
+{
+    const char *loglevels[] = {"NONE", "ERROR", "WARNING", "INFO", "DEBUG", "ALL"};
+
+    if (loglevel == DC_LOGLEVEL_ERROR || loglevel == DC_LOGLEVEL_WARNING) {
+        message ("%s: %s [in %s:%d (%s)]\n", loglevels[loglevel], msg, file, line, function);
+    } else {
+        message ("%s: %s\n", loglevels[loglevel], msg);
+    }
 }
