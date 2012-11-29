@@ -67,7 +67,7 @@ You can get a list of the backend and device names by running `universal` in the
 
 [license]: http://www.apache.org/licenses/LICENSE-2.0.html
 [libdc]: http://www.divesoftware.org/libdc/
-[uddf]: http://www.streit.cc/extern/uddf_v300/en/index.html
+[uddf]: http://www.streit.cc/extern/uddf_v310/en/index.html
 [pwagstrom]: http://patrick.wagstrom.net/
 [glib]: http://developer.gnome.org/glib/
 [check]: http://check.sf.net/
