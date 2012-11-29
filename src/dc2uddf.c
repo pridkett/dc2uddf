@@ -661,6 +661,10 @@ int dump_dives(char *backendname, char *devname, char *xmlfile, char *rawfile) {
     return rc != DC_STATUS_SUCCESS ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
+void usage() {
+    printf("usage: dc2uddf BACKEND DEVNAME [xmlfile] [rawfile]\n");
+    printf("example: dc2uddf smart \"Uwatec Galileo\" dives.uddf\n");
+}
 
 int main(int argc, char **argv) {
     gchar *backend = NULL;
@@ -684,5 +688,9 @@ int main(int argc, char **argv) {
         rawfile = argv[4];
     }
 
+    if (backend == NULL || devname == NULL) {
+        usage();
+        return EXIT_FAILURE;
+    }
     return dump_dives(backend, devname, xmlfile, rawfile);
 }
