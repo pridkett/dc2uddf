@@ -1,10 +1,16 @@
 Makefile.in
+Makefile
 .autotools
 .cproject
 *.swp
+*.o
 .project
 autom4te.cache
 config.guess
 config.log
 config.sub
 configure
+config.status
+src/check_dif
+src/dc2uddf
+.deps
