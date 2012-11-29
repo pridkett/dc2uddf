@@ -9,6 +9,8 @@
 #define DC2UDDF_EMAIL "patrick@wagstrom.net"
 
 #define MAX_STRING_LENGTH 100
+#define BAR_TO_PASCAL(a) (a*10000)
+#define CELSIUS_TO_KELVIN(a) (a+273.15)
 
 /**
  * Creates the simple generator XML block
@@ -93,13 +95,13 @@ xmlNodePtr _createWaypoint(dif_sample_t *sample) {
             xmlAddChild(xmlWaypoint, xmlDepth);
             break;
         case DIF_SAMPLE_PRESSURE:
-            g_snprintf(nodeText, MAX_STRING_LENGTH, "%0.2f", ss->value.pressure.value);
+            g_snprintf(nodeText, MAX_STRING_LENGTH, "%0.2f", BAR_TO_PASCAL(ss->value.pressure.value));
             xmlNodePtr xmlTankpressure = xmlNewNode(NULL, BAD_CAST "tankpressure");
             xmlAddChild(xmlTankpressure, xmlNewText(BAD_CAST nodeText));
             xmlAddChild(xmlWaypoint, xmlTankpressure);
             break;
         case DIF_SAMPLE_TEMPERATURE:
-            g_snprintf(nodeText, MAX_STRING_LENGTH, "%0.2f", ss->value.temperature);
+            g_snprintf(nodeText, MAX_STRING_LENGTH, "%0.2f", CELSIUS_TO_KELVIN(ss->value.temperature));
             xmlNodePtr xmlTemperature = xmlNewNode(NULL, BAD_CAST "temperature");
             xmlAddChild(xmlTemperature, xmlNewText(BAD_CAST nodeText));
             xmlAddChild(xmlWaypoint, xmlTemperature);
@@ -135,6 +137,7 @@ xmlNodePtr _createWaypoint(dif_sample_t *sample) {
             printf("** Unable to process unknown type: %d\n", ss->type);
             break;
         }
+        subsample = g_list_next(subsample);
     }
 
     g_free(nodeText);
@@ -193,12 +196,15 @@ void dif_save_dive_collection_uddf(dif_dive_collection_t *dc, gchar* filename) {
     xmlDocPtr doc = NULL;
     xmlNodePtr root_node = NULL;
 
+    printf("saving file to %s\n", filename);
     doc = xmlNewDoc(BAD_CAST "1.0");
     root_node = xmlNewNode(NULL, BAD_CAST "uddf");
     xmlNewProp(root_node, BAD_CAST "version", BAD_CAST "3.0.0");
     xmlDocSetRootElement(doc, root_node);
     xmlAddChild(root_node, _createGeneratorBlock());
+    printf("creating profile data\n");
     xmlAddChild(root_node, _createProfileData(dc));
+    printf("saving data\n");
     xmlSaveFormatFileEnc(filename, doc, "UTF-8", 1);
     xmlFreeDoc(doc);
     xmlCleanupParser();

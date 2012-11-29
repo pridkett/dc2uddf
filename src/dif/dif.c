@@ -23,6 +23,7 @@ dif_dive_t *dif_dive_alloc() {
     dive = g_malloc(sizeof(dif_dive_t));
     dive->samples = NULL;
     dive->gasmixes = NULL;
+    dive = dif_dive_set_datetime(dive, 2000,01,01,12,00,00);
     return dive;
 }
 

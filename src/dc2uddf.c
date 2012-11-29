@@ -37,6 +37,11 @@ typedef struct device_data_t {
     dc_event_clock_t clock;
 } device_data_t;
 
+typedef struct sample_cb_data_t {
+    dif_dive_t *dive;
+    dif_sample_t *sample;
+} sample_cb_data_t;
+
 #ifdef _WIN32
 #define DC_TICKS_FORMAT "%I64d"
 #else
@@ -187,13 +192,15 @@ dc_to_dif_event(parser_sample_event_t ev) {
 
 void
 sample_cb (dc_sample_type_t type, dc_sample_value_t value, void *userdata) {
-    dif_dive_t *dive = (dif_dive_t *) userdata;
+    sample_cb_data_t *udata = (sample_cb_data_t *) userdata;
+    dif_dive_t *dive = udata->dive;
     dif_subsample_t *subsample = NULL;
-    static dif_sample_t *sample = NULL;
+    dif_sample_t *sample = udata->sample;
 
     switch (type) {
     case DC_SAMPLE_TIME:
         sample = dif_sample_alloc();
+        udata->sample = sample;
         dive = dif_dive_add_sample(dive, sample);
         sample->timestamp = value.time;
         break;
@@ -228,7 +235,8 @@ sample_cb (dc_sample_type_t type, dc_sample_value_t value, void *userdata) {
     case DC_SAMPLE_RBT:
         subsample = dif_subsample_alloc();
         subsample->type = DIF_SAMPLE_RBT;
-        subsample->value.rbt = value.rbt;
+        // TODO: my computer reports RBT in minutes, so we multiply here
+        subsample->value.rbt = value.rbt*60;
         sample = dif_sample_add_subsample(sample, subsample);
         break;
     case DC_SAMPLE_HEARTBEAT:
@@ -263,7 +271,7 @@ doparse(dif_dive_collection_t *dc, dc_device_t *device, const unsigned char data
     unsigned int i = 0;
 
     /* allocate the dive */
-    message("allocating the dive");
+    message("allocating the dive\n");
     dive = dif_dive_alloc();
     if (dive == NULL || dc == NULL) {
         WARNING("Error creating the dive object");
@@ -355,12 +363,18 @@ doparse(dif_dive_collection_t *dc, dc_device_t *device, const unsigned char data
 
     /* parse the sample data */
     message("Parsing the sample data.\n");
-    rc = dc_parser_samples_foreach(parser, sample_cb, &dive);
+    sample_cb_data_t *cbdata = g_malloc(sizeof(sample_cb_data_t));
+    cbdata->dive = dive;
+    cbdata->sample = NULL;
+
+    rc = dc_parser_samples_foreach(parser, sample_cb, cbdata);
     if (rc != DC_STATUS_SUCCESS) {
         WARNING("Error parsing the sample data.");
         dc_parser_destroy(parser);
         return rc;
     }
+
+    g_free(cbdata);
 
     /* destroy the parser */
     message("Destroying the parser.\n");
