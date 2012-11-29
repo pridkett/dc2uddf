@@ -23,6 +23,7 @@ dif_dive_t *dif_dive_alloc() {
     dive = g_malloc(sizeof(dif_dive_t));
     dive->samples = NULL;
     dive->gasmixes = NULL;
+    dive->datetime = NULL;
     dive = dif_dive_set_datetime(dive, 2000,01,01,12,00,00);
     return dive;
 }
@@ -30,6 +31,9 @@ dif_dive_t *dif_dive_alloc() {
 void dif_dive_free(dif_dive_t *dive) {
     g_list_free_full(dive->samples, (GDestroyNotify) dif_sample_free);
     g_list_free_full(dive->gasmixes, (GDestroyNotify) dif_gasmix_free);
+    if (dive->datetime != NULL) {
+        g_date_time_unref(dive->datetime);
+    }
     g_free(dive);
 }
 
@@ -44,12 +48,12 @@ dif_dive_t *dif_dive_add_gasmix(dif_dive_t *dive, dif_gasmix_t *gasmix) {
 }
 
 dif_dive_t *dif_dive_set_datetime(dif_dive_t *dive, guint year, guint month, guint day, guint hour, guint minute, guint second) {
-    dive->year = year;
-    dive->month = month;
-    dive->day = day;
-    dive->hour = hour;
-    dive->minute = minute;
-    dive->second = second;
+    dive->datetime = g_date_time_new_local(year, month, day, hour, minute, second);
+    return dive;
+}
+
+dif_dive_t *dif_dive_set_datetime_utc(dif_dive_t *dive, guint year, guint month, guint day, guint hour, guint minute, guint second) {
+    dive->datetime = g_date_time_new_utc(year, month, day, hour, minute, second);
     return dive;
 }
 

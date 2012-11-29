@@ -8,7 +8,7 @@ extern "C" {
 #include <glib.h>
 
 /**
- * a dive collection is used for a set of dives downloaded from a comuter
+ * a dive collection is used for a set of dives downloaded from a computer
  */
 typedef struct dif_dive_collection_t {
     GList *dives; /* a list of dif_dive_t */
@@ -18,7 +18,7 @@ typedef struct dif_dive_collection_t {
  * a single dive consists of a sequence of samples
  */
 typedef struct dif_dive_t {
-    guint year, month, day, hour, minute, second;
+    GDateTime *datetime;
     guint duration;
     gdouble maxdepth;
     GList *gasmixes; /* a list of dif_gasmix_t */
@@ -72,7 +72,9 @@ typedef enum dif_sample_event_t {
     DIF_SAMPLE_EVENT_AIRTIME,
     DIF_SAMPLE_EVENT_RGBM,
     DIF_SAMPLE_EVENT_HEADING,
-    DIF_SAMPLE_EVENT_TISSUELEVEL
+    DIF_SAMPLE_EVENT_TISSUELEVEL,
+    DIF_SAMPLE_EVENT_GASCHANGE2,
+    DIF_SAMPLE_EVENT_NDL
 } dif_sample_event_t;
 
 /*
@@ -128,6 +130,7 @@ void dif_dive_free(dif_dive_t *dive);
 dif_dive_t *dif_dive_add_sample(dif_dive_t *dive, dif_sample_t *sample);
 dif_dive_t *dif_dive_add_gasmix(dif_dive_t *dive, dif_gasmix_t *gasmix);
 dif_dive_t *dif_dive_set_datetime(dif_dive_t *dive, guint year, guint month, guint day, guint hour, guint minute, guint second);
+dif_dive_t *dif_dive_set_datetime_utc(dif_dive_t *dive, guint year, guint month, guint day, guint hour, guint minute, guint second);
 dif_dive_t *dif_dive_set_duration(dif_dive_t *dive, guint duration);
 dif_dive_t *dif_dive_set_maxdepth(dif_dive_t *dive, gdouble maxdepth);
 dif_gasmix_t *dif_gasmix_alloc();

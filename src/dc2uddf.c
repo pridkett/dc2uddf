@@ -185,6 +185,10 @@ dc_to_dif_event(parser_sample_event_t ev) {
         return DIF_SAMPLE_EVENT_HEADING;
     case SAMPLE_EVENT_TISSUELEVEL:
         return DIF_SAMPLE_EVENT_TISSUELEVEL;
+    case SAMPLE_EVENT_GASCHANGE2:
+        return DIF_SAMPLE_EVENT_GASCHANGE2;
+    case SAMPLE_EVENT_NDL:
+        return DIF_SAMPLE_EVENT_NDL;
     }
     WARNING("Unknown libdivecomputer sample event");
     return SAMPLE_EVENT_UNKNOWN;
@@ -677,13 +681,13 @@ int dump_dives(char *backendname, char *devname, char *xmlfile, char *rawfile) {
 
 void usage() {
     printf("usage: dc2uddf BACKEND DEVNAME [xmlfile] [rawfile]\n");
-    printf("example: dc2uddf smart \"Uwatec Galileo\" dives.uddf\n");
+    printf("example: dc2uddf smart \"Uwatec Galileo\" output.uddf\n");
 }
 
 int main(int argc, char **argv) {
     gchar *backend = NULL;
     gchar *devname = NULL;
-    gchar *xmlfile = "output.xml";
+    gchar *xmlfile = "output.uddf";
     gchar *rawfile = "output.raw";
 
     if (argc > 1) {

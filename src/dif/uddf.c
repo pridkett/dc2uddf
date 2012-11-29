@@ -72,6 +72,14 @@ xmlNodePtr _createGeneratorBlock () {
  * </waypoint>
  */
 xmlNodePtr _createWaypoint(dif_sample_t *sample) {
+    static const char *events[] = {
+        "none", "deco", "rbt", "ascent", "ceiling", "workload", "transmitter",
+        "violation", "bookmark", "surface", "safety stop", "gaschange",
+        "safety stop (voluntary)", "safety stop (mandatory)", "deepstop",
+        "ceiling (safety stop)", "unknown", "divetime", "maxdepth",
+        "OLF", "PO2", "airtime", "rgbm", "heading", "tissue level warning",
+        "gaschange2", "ndl"};
+
     xmlNodePtr xmlWaypoint = xmlNewNode(NULL, BAD_CAST "waypoint");
 
     gchar *nodeText = g_malloc(MAX_STRING_LENGTH);
@@ -108,8 +116,21 @@ xmlNodePtr _createWaypoint(dif_sample_t *sample) {
             xmlAddChild(xmlWaypoint, xmlTemperature);
             break;
         case DIF_SAMPLE_EVENT:
-            printf("** Unable to process DIF_SAMPLE_EVENTS\n");
+        {
+            // WARNING: the event tag is NOT part of UDDF
+            xmlNodePtr xmlEvent = xmlNewNode(NULL, BAD_CAST "event");
+            g_snprintf(nodeText, MAX_STRING_LENGTH, "%u", ss->value.event.type);
+            xmlNewProp(xmlEvent, BAD_CAST "type", BAD_CAST nodeText);
+            g_snprintf(nodeText, MAX_STRING_LENGTH, "%u", ss->value.event.time);
+            xmlNewProp(xmlEvent, BAD_CAST "time", BAD_CAST nodeText);
+            g_snprintf(nodeText, MAX_STRING_LENGTH, "%u", ss->value.event.flags);
+            xmlNewProp(xmlEvent, BAD_CAST "flags", BAD_CAST nodeText);
+            g_snprintf(nodeText, MAX_STRING_LENGTH, "%u", ss->value.event.value);
+            xmlNewProp(xmlEvent, BAD_CAST "value", BAD_CAST nodeText);
+            xmlAddChild(xmlEvent, xmlNewText(BAD_CAST events[ss->value.event.type]));
+            xmlAddChild(xmlWaypoint, xmlEvent);
             break;
+        }
         case DIF_SAMPLE_RBT:
             g_snprintf(nodeText, MAX_STRING_LENGTH, "%d", ss->value.rbt);
             xmlNodePtr xmlRemainingbottomtime = xmlNewNode(NULL, BAD_CAST "remainingbottomtime");
@@ -129,8 +150,26 @@ xmlNodePtr _createWaypoint(dif_sample_t *sample) {
             xmlAddChild(xmlWaypoint, xmlHeading);
             break;
         case DIF_SAMPLE_VENDOR:
-            printf("** Unable to process DIF_SAMPLE_VENDOR\n");
+        {
+            // WARNING: the vendor tag is NOT part of UDDF
+            xmlNodePtr xmlVendor = xmlNewNode(NULL, BAD_CAST "vendor");
+            gchar *propText = g_malloc(MAX_STRING_LENGTH);
+            g_snprintf(propText, MAX_STRING_LENGTH, "%u", ss->value.vendor.type);
+            xmlNewProp(xmlVendor, BAD_CAST "type", BAD_CAST propText);
+            g_snprintf(propText, MAX_STRING_LENGTH, "%u", ss->value.vendor.size);
+            xmlNewProp(xmlVendor, BAD_CAST "size", BAD_CAST propText);
+            guint vendorTextLength = ss->value.vendor.size*2+1;
+            gchar *vendorText = g_malloc0(ss->value.vendor.size*2+1);
+            unsigned int i;
+            for (i=0; i < ss->value.vendor.size; i++) {
+                g_snprintf((vendorText + i * 2), vendorTextLength - i * 2, "%02X", ((unsigned char *) ss->value.vendor.data)[i]);
+            }
+            xmlAddChild(xmlVendor, xmlNewText(BAD_CAST vendorText));
+            xmlAddChild(xmlWaypoint, xmlVendor);
+            g_free(propText);
+            g_free(vendorText);
             break;
+        }
         case DIF_SAMPLE_UNDEFINED:
             printf("** Unable to process DIF_SAMPLE_UNKNOWN\n");
             break;
@@ -150,13 +189,12 @@ xmlNodePtr _createDive(dif_dive_t *dive, gchar *diveid) {
     xmlNewProp(xmlDive, BAD_CAST "id", BAD_CAST diveid);
     xmlNodePtr xmlDateTime = xmlNewNode(NULL, BAD_CAST "datetime");
 
-    gchar *dt = g_malloc(MAX_STRING_LENGTH);
-    g_snprintf(dt, MAX_STRING_LENGTH, "%04d-%02d-%02dT%02d:%02d:%02d",
-            dive->year, dive->month, dive->day,
-            dive->hour, dive->minute, dive->second);
-    xmlAddChild(xmlDateTime, xmlNewText(BAD_CAST dt));
-    g_free(dt);
-    xmlAddChild(xmlDive, xmlDateTime);
+    if (dive->datetime != NULL) {
+        gchar *dt = g_date_time_format(dive->datetime, "%Y-%m-%dT%H:%M:%S");
+        xmlAddChild(xmlDateTime, xmlNewText(BAD_CAST dt));
+        g_free(dt);
+        xmlAddChild(xmlDive, xmlDateTime);
+    }
 
     xmlNodePtr xmlSamples = xmlNewNode(NULL, BAD_CAST "samples");
     xmlAddChild(xmlDive, xmlSamples);

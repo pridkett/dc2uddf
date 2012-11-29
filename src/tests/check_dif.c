@@ -115,7 +115,7 @@ START_TEST (test_dif_save_dive_collection_uddf)
     dif_dive_collection_t *dc = dif_dive_collection_alloc();
     dif_dive_t *dive = dif_dive_alloc();
     dc = dif_dive_collection_add_dive(dc, dive);
-    dif_save_dive_collection_uddf(dc, "test.xml");
+    dif_save_dive_collection_uddf(dc, "test.uddf");
     dif_dive_collection_free(dc);
     fail_unless(1==1, "shouldn't ever show this error");
 }
