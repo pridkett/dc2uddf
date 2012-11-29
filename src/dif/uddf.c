@@ -7,9 +7,10 @@
 #define DC2UDDF_VERSION "1.0"
 #define DC2UDDF_AUTHOR "Patrick Wagstrom"
 #define DC2UDDF_EMAIL "patrick@wagstrom.net"
+#define UDDF_VERSION "3.1.0"
 
 #define MAX_STRING_LENGTH 100
-#define BAR_TO_PASCAL(a) (a*10000)
+#define BAR_TO_PASCAL(a) (a*100000)
 #define CELSIUS_TO_KELVIN(a) (a+273.15)
 
 /**
@@ -199,7 +200,7 @@ void dif_save_dive_collection_uddf(dif_dive_collection_t *dc, gchar* filename) {
     printf("saving file to %s\n", filename);
     doc = xmlNewDoc(BAD_CAST "1.0");
     root_node = xmlNewNode(NULL, BAD_CAST "uddf");
-    xmlNewProp(root_node, BAD_CAST "version", BAD_CAST "3.0.0");
+    xmlNewProp(root_node, BAD_CAST "version", BAD_CAST UDDF_VERSION);
     xmlDocSetRootElement(doc, root_node);
     xmlAddChild(root_node, _createGeneratorBlock());
     printf("creating profile data\n");
