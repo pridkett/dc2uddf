@@ -9,8 +9,7 @@ dif_dive_collection_t *dif_dive_collection_alloc() {
 }
 
 void dif_dive_collection_free(dif_dive_collection_t *dc) {
-    // FIXME: this IS NOT THE WAY TO DO THIS!
-    // FIXME: this leaks memory right now
+    g_list_free_full(dc->dives, (GDestroyNotify) dif_dive_free);
     g_free(dc);
 }
 
@@ -25,6 +24,12 @@ dif_dive_t *dif_dive_alloc() {
     dive->samples = NULL;
     dive->gasmixes = NULL;
     return dive;
+}
+
+void dif_dive_free(dif_dive_t *dive) {
+    g_list_free_full(dive->samples, (GDestroyNotify) dif_sample_free);
+    g_list_free_full(dive->gasmixes, (GDestroyNotify) dif_gasmix_free);
+    g_free(dive);
 }
 
 dif_dive_t *dif_dive_add_sample(dif_dive_t *dive, dif_sample_t *sample) {
@@ -64,6 +69,11 @@ dif_sample_t *dif_sample_alloc() {
     return sample;
 }
 
+void dif_sample_free(dif_sample_t *sample) {
+    g_list_free_full(sample->subsamples, (GDestroyNotify) dif_subsample_free);
+    g_free(sample);
+}
+
 dif_sample_t *dif_sample_add_subsample(dif_sample_t *sample, dif_subsample_t *subsample) {
     sample->subsamples = g_list_append(sample->subsamples, subsample);
     return sample;
@@ -76,6 +86,10 @@ dif_subsample_t *dif_subsample_alloc() {
     return subsample;
 }
 
+void dif_subsample_free(dif_subsample_t *subsample) {
+    g_free(subsample);
+}
+
 dif_gasmix_t *dif_gasmix_alloc() {
     dif_gasmix_t *gasmix;
     gasmix = g_malloc(sizeof(dif_gasmix_t));
@@ -85,4 +99,8 @@ dif_gasmix_t *dif_gasmix_alloc() {
     gasmix->argon = 0.0;
     gasmix->hydrogen = 0.0;
     return gasmix;
+}
+
+void dif_gasmix_free(dif_gasmix_t *gasmix) {
+    g_free(gasmix);
 }

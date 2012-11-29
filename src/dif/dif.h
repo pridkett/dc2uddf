@@ -124,15 +124,19 @@ dif_dive_collection_t *dif_dive_collection_alloc();
 void dif_dive_collection_free(dif_dive_collection_t *dc);
 dif_dive_collection_t *dif_dive_collection_add_dive(dif_dive_collection_t *dc, dif_dive_t *dive);
 dif_dive_t *dif_dive_alloc();
+void dif_dive_free(dif_dive_t *dive);
 dif_dive_t *dif_dive_add_sample(dif_dive_t *dive, dif_sample_t *sample);
 dif_dive_t *dif_dive_add_gasmix(dif_dive_t *dive, dif_gasmix_t *gasmix);
 dif_dive_t *dif_dive_set_datetime(dif_dive_t *dive, guint year, guint month, guint day, guint hour, guint minute, guint second);
 dif_dive_t *dif_dive_set_duration(dif_dive_t *dive, guint duration);
 dif_dive_t *dif_dive_set_maxdepth(dif_dive_t *dive, gdouble maxdepth);
 dif_gasmix_t *dif_gasmix_alloc();
+void dif_gasmix_free(dif_gasmix_t *gasmix);
 dif_sample_t *dif_sample_alloc();
+void dif_sample_free(dif_sample_t *sample);
 dif_sample_t *dif_sample_add_subsample(dif_sample_t *sample, dif_subsample_t *subsample);
 dif_subsample_t *dif_subsample_alloc();
+void dif_subsample_free(dif_subsample_t *subsample);
 void dif_save_dive_collection_uddf(dif_dive_collection_t *dc, gchar* filename);
 
 #ifdef __cplusplus
