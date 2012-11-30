@@ -57,11 +57,11 @@ I only have a single dive computer, the Uwatec Galileo Luna. In order to get eve
 
 Now you should be able to download the data from your computer using the following command:
 
-    dc2uddf smart "Uwatec Galileo"
+    dc2uddf -b smart -d "Uwatec Galileo"
     
 The general format is:
 
-    dc2uddf [backend name] [device name] [optional output file]
+    dc2uddf -b [backend name] -d [device name] [
     
 You can get a list of the backend and device names by running `universal` in the examples directory of libdive computer. At some point in the future I'll update dc2uddf to list all of the possible devices. However, as I only have the Uwatec Galileo Smart, it is the only device that is tested.
 

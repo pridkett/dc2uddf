@@ -6,13 +6,14 @@
  Copyright   : Copyright (c) 2012 Patrick Wagstrom
                Based on code originally Copyright (C) 2009 Jef Driesen
  Description : A simple tool that utilizes libdivecomputer to download data
-               from a dive comptuer and generate a UDDF file
+               from a dive computer and generate a UDDF file
  ============================================================================
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <getopt.h>
 
 #include <libdivecomputer/context.h>
 #include <libdivecomputer/common.h>
@@ -541,7 +542,7 @@ dowork(dc_context_t *context, dc_descriptor_t *descriptor, const char *devname, 
             return rc;
         }
 
-        dif_save_dive_collection_uddf(divedata.dc, xmlfile);
+        dif_save_dive_collection_uddf(divedata.dc, (gchar *) xmlfile);
 
         /* free the fingerprint buffer */
         dc_buffer_free(divedata.fingerprint);
@@ -680,35 +681,80 @@ int dump_dives(char *backendname, char *devname, char *xmlfile, char *rawfile) {
 }
 
 void usage() {
-    printf("usage: dc2uddf BACKEND DEVNAME [xmlfile] [rawfile]\n");
-    printf("example: dc2uddf smart \"Uwatec Galileo\" output.uddf\n");
+    printf("usage: dc2uddf -b BACKEND -d DEVNAME [options]\n");
+    printf("example: dc2uddf -b smart -d \"Uwatec Galileo\"\n");
+    printf("\n");
+    printf("arguments:\n");
+    printf("  -b,--backend BACKEND: use backend called BACKEND\n");
+    printf("  -d,--device DEVICE: use device called DEVICE\n");
+    printf("  -o,--output UDDFFILE: save UDDF to file called UDDFFILE\n");
+    printf("  -h,--help: print this help screen\n");
+    exit(EXIT_FAILURE);
 }
 
 int main(int argc, char **argv) {
+    int opt;
+
     gchar *backend = NULL;
     gchar *devname = NULL;
     gchar *xmlfile = "output.uddf";
     gchar *rawfile = "output.raw";
 
-    if (argc > 1) {
-        backend = argv[1];
-    }
+    static struct option long_options[] = {
+            {"backend", required_argument, NULL, 'b'},
+            {"device",  required_argument, NULL, 'd'},
+            {"output",  required_argument, NULL, 'o'},
+            {"help",    no_argument,       NULL, 'h'},
+            {NULL,      no_argument,       NULL, 0}
+    };
+    char *getopt_short = "b:d:o:h";
+    /* getopt_long stores the option index here. */
+    int option_index = 0;
 
-    if (argc > 2) {
-        devname = argv[2];
-    }
+    opt = getopt_long (argc, argv, getopt_short,
+            long_options, &option_index);
+    while (opt != -1)
+    {
+        switch (opt)
+        {
+        case 0:
+            /* If this option set a flag, do nothing else now. */
+            if (long_options[option_index].flag != 0)
+                break;
+            printf ("option %s", long_options[option_index].name);
+            if (optarg)
+                printf (" with arg %s", optarg);
+            printf ("\n");
+            break;
 
-    if (argc > 3) {
-        xmlfile = argv[3];
-    }
+        case 'b':
+            backend = optarg;
+            break;
 
-    if (argc > 4) {
-        rawfile = argv[4];
+        case 'd':
+            devname = optarg;
+            break;
+
+        case 'o':
+            xmlfile = optarg;
+            break;
+
+        case '?':
+        case 'h':
+            usage();
+            break;
+
+        default:
+            printf("Unknown argument: %c", (char)opt);
+            return EXIT_FAILURE;
+        }
+        opt = getopt_long (argc, argv, getopt_short,
+                long_options, &option_index);
     }
 
     if (backend == NULL || devname == NULL) {
         usage();
-        return EXIT_FAILURE;
     }
+
     return dump_dives(backend, devname, xmlfile, rawfile);
 }
