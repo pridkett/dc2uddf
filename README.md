@@ -61,7 +61,7 @@ Now you should be able to download the data from your computer using the followi
     
 The general format is:
 
-    dc2uddf -b [backend name] -d [device name] [
+    dc2uddf -b [backend name] -d [device name]
     
 You can get a list of the backend and device names by running `universal` in the examples directory of libdive computer. At some point in the future I'll update dc2uddf to list all of the possible devices. However, as I only have the Uwatec Galileo Smart, it is the only device that is tested.
 
