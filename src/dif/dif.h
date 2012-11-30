@@ -81,24 +81,24 @@ typedef enum dif_sample_event_t {
  * The actual values needed for each subsample vary
  */
 typedef union dif_sample_value_t {
-    double depth;
+    gdouble depth;
     struct {
-        unsigned int tank;
-        double value;
+        guint tank;
+        gdouble value;
     } pressure;
-    double temperature;
+    gdouble temperature;
     struct {
         dif_sample_event_t type;
-        unsigned int time;
-        unsigned int flags;
-        unsigned int value;
+        guint time;
+        guint flags;
+        guint value;
     } event;
-    unsigned int rbt;
-    unsigned int heartbeat;
-    unsigned int bearing;
+    guint rbt;
+    guint heartbeat;
+    guint bearing;
     struct {
-        unsigned int type;
-        unsigned int size;
+        guint type;
+        guint size;
         const void *data;
     } vendor;
 } dif_sample_value_t;
@@ -109,7 +109,7 @@ typedef union dif_sample_value_t {
  * samples that all occurred at the same timestamp of the dive
  */
 typedef struct dif_sample_t {
-    unsigned int timestamp;
+    guint timestamp;
     GList *subsamples; /* a list of dif_subsample_t */
 } dif_sample_t;
 
@@ -121,7 +121,14 @@ typedef struct dif_subsample_t {
     dif_sample_value_t value;
 } dif_subsample_t;
 
+/*
+ * configuration settings for xml serializer
+ */
+typedef struct xml_options_t {
+    gchar *filename;
+} xml_options_t;
 
+/* dif.c */
 dif_dive_collection_t *dif_dive_collection_alloc();
 void dif_dive_collection_free(dif_dive_collection_t *dc);
 dif_dive_collection_t *dif_dive_collection_add_dive(dif_dive_collection_t *dc, dif_dive_t *dive);
@@ -138,10 +145,21 @@ void dif_gasmix_free(dif_gasmix_t *gasmix);
 dif_sample_t *dif_sample_alloc();
 void dif_sample_free(dif_sample_t *sample);
 dif_sample_t *dif_sample_add_subsample(dif_sample_t *sample, dif_subsample_t *subsample);
+dif_subsample_t *dif_sample_get_subsample(dif_sample_t *sample, dif_sample_type_t sampleType);
 dif_subsample_t *dif_subsample_alloc();
 void dif_subsample_free(dif_subsample_t *subsample);
-void dif_save_dive_collection_uddf(dif_dive_collection_t *dc, gchar* filename);
 
+/* uddf.c */
+xml_options_t *dif_xml_options_alloc();
+void dif_xml_options_free(xml_options_t *options);
+void dif_save_dive_collection_uddf(dif_dive_collection_t *dc, gchar* filename);
+void dif_save_dive_collection_uddf_options(dif_dive_collection_t *dc, xml_options_t *options);
+
+/* algos.c */
+dif_dive_collection_t *dif_alg_dc_initial_pressure_fix(dif_dive_collection_t *dc);
+dif_dive_t *dif_alg_dive_initial_pressure_fix(dif_dive_t *dive);
+dif_dive_collection_t *dif_alg_dc_truncate_dives(dif_dive_collection_t *dc);
+dif_dive_t *dif_alg_dive_truncate_dive(dif_dive_t *dive);
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

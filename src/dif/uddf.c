@@ -3,7 +3,6 @@
 #include <glib.h>
 #include "dif.h"
 
-
 #define DC2UDDF_VERSION "1.0"
 #define DC2UDDF_AUTHOR "Patrick Wagstrom"
 #define DC2UDDF_EMAIL "patrick@wagstrom.net"
@@ -32,7 +31,7 @@
  *       <datetime>2004-09-30</datetime>
  *   </generator>
  */
-xmlNodePtr _createGeneratorBlock () {
+xmlNodePtr _createGeneratorBlock(xml_options_t *options) {
     xmlNodePtr generator = xmlNewNode(NULL, BAD_CAST "generator");
 
     xmlNodePtr name = xmlNewNode(NULL, BAD_CAST "name");
@@ -71,7 +70,7 @@ xmlNodePtr _createGeneratorBlock () {
  *   <temperature>278.15</temperature>
  * </waypoint>
  */
-xmlNodePtr _createWaypoint(dif_sample_t *sample) {
+xmlNodePtr _createWaypoint(dif_sample_t *sample, xml_options_t *options) {
     static const char *events[] = {
         "none", "deco", "rbt", "ascent", "ceiling", "workload", "transmitter",
         "violation", "bookmark", "surface", "safety stop", "gaschange",
@@ -184,11 +183,10 @@ xmlNodePtr _createWaypoint(dif_sample_t *sample) {
     return xmlWaypoint;
 }
 
-xmlNodePtr _createDive(dif_dive_t *dive, gchar *diveid) {
+xmlNodePtr _createDive(dif_dive_t *dive, gchar *diveid, xml_options_t *options) {
     xmlNodePtr xmlDive = xmlNewNode(NULL, BAD_CAST "dive");
     xmlNewProp(xmlDive, BAD_CAST "id", BAD_CAST diveid);
     xmlNodePtr xmlDateTime = xmlNewNode(NULL, BAD_CAST "datetime");
-
     if (dive->datetime != NULL) {
         gchar *dt = g_date_time_format(dive->datetime, "%Y-%m-%dT%H:%M:%S");
         xmlAddChild(xmlDateTime, xmlNewText(BAD_CAST dt));
@@ -201,14 +199,14 @@ xmlNodePtr _createDive(dif_dive_t *dive, gchar *diveid) {
 
     GList *samples = g_list_first(dive->samples);
     while (samples != NULL) {
-        xmlNodePtr xmlWaypoint = _createWaypoint(samples->data);
+        xmlNodePtr xmlWaypoint = _createWaypoint(samples->data, options);
         xmlAddChild(xmlSamples, xmlWaypoint);
         samples = g_list_next(samples);
     }
     return xmlDive;
 }
 
-xmlNodePtr _createRepetitionGroup(dif_dive_collection_t *dc) {
+xmlNodePtr _createRepetitionGroup(dif_dive_collection_t *dc, xml_options_t *options) {
     xmlNodePtr repetitionGroup = xmlNewNode(NULL, BAD_CAST "repetitiongroup");
     xmlNewProp(repetitionGroup, BAD_CAST "id", BAD_CAST "group1");
 
@@ -217,34 +215,53 @@ xmlNodePtr _createRepetitionGroup(dif_dive_collection_t *dc) {
     GList *dives = g_list_first(dc->dives);
     while (dives != NULL) {
         g_snprintf(diveid, MAX_STRING_LENGTH, "dive%d", ctr++);
-        xmlAddChild(repetitionGroup, _createDive(dives->data, diveid));
+        xmlAddChild(repetitionGroup, _createDive(dives->data, diveid, options));
         dives = g_list_next(dives);
     }
     g_free(diveid);
     return repetitionGroup;
 }
 
-xmlNodePtr _createProfileData(dif_dive_collection_t *dc) {
+xmlNodePtr _createProfileData(dif_dive_collection_t *dc, xml_options_t *options) {
     xmlNodePtr profile_data = xmlNewNode(NULL, BAD_CAST "profiledata");
-    xmlAddChild(profile_data, _createRepetitionGroup(dc));
+    xmlAddChild(profile_data, _createRepetitionGroup(dc, options));
     return profile_data;
 }
 
+xml_options_t *dif_xml_options_alloc() {
+    xml_options_t *options = g_malloc(sizeof(xml_options_t));
+    options->filename = NULL;
+    return options;
+}
+
+void dif_xml_options_free(xml_options_t *options) {
+    /* for right now don't wipe out the filename */
+//    if (options->filename != NULL) {
+//        g_free(options->filename);
+//    }
+    g_free(options);
+}
 
 void dif_save_dive_collection_uddf(dif_dive_collection_t *dc, gchar* filename) {
+    xml_options_t *options = dif_xml_options_alloc();
+    options->filename = filename;
+    dif_save_dive_collection_uddf_options(dc, options);
+    dif_xml_options_free(options);
+}
+
+void dif_save_dive_collection_uddf_options(dif_dive_collection_t *dc, xml_options_t *options) {
     xmlDocPtr doc = NULL;
     xmlNodePtr root_node = NULL;
-
-    printf("saving file to %s\n", filename);
+    printf("saving file to %s\n", options->filename);
     doc = xmlNewDoc(BAD_CAST "1.0");
     root_node = xmlNewNode(NULL, BAD_CAST "uddf");
     xmlNewProp(root_node, BAD_CAST "version", BAD_CAST UDDF_VERSION);
     xmlDocSetRootElement(doc, root_node);
-    xmlAddChild(root_node, _createGeneratorBlock());
+    xmlAddChild(root_node, _createGeneratorBlock(options));
     printf("creating profile data\n");
-    xmlAddChild(root_node, _createProfileData(dc));
+    xmlAddChild(root_node, _createProfileData(dc, options));
     printf("saving data\n");
-    xmlSaveFormatFileEnc(filename, doc, "UTF-8", 1);
+    xmlSaveFormatFileEnc(options->filename, doc, "UTF-8", 1);
     xmlFreeDoc(doc);
     xmlCleanupParser();
 }

@@ -109,3 +109,19 @@ dif_gasmix_t *dif_gasmix_alloc() {
 void dif_gasmix_free(dif_gasmix_t *gasmix) {
     g_free(gasmix);
 }
+
+
+/**
+ * given a sample, get the subsample that matches the particular type
+ */
+dif_subsample_t *dif_sample_get_subsample(dif_sample_t *sample, dif_sample_type_t sampleType) {
+    GList *subsamples = sample->subsamples;
+    while (subsamples != NULL) {
+        dif_subsample_t *subsample = subsamples->data;
+        if (subsample->type == sampleType) {
+            return subsample;
+        }
+    }
+    return NULL;
+}
+

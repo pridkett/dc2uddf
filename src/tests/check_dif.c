@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <stdlib.h>
 #include <check.h>
 #include "dif/dif.h"
@@ -121,6 +122,91 @@ START_TEST (test_dif_save_dive_collection_uddf)
 }
 END_TEST
 
+/**
+ * helper function to create a couple of dives for testing of algorithms
+ *
+ * dive1: six samples
+ *        samples 0,1 lack pressure and should be fixed by dif_alg_dive_fix_initial_pressure
+ *
+ * dive2: twelve samples
+ *        samples 0,1 lack pressure and should be fixed by dif_alg_dive_fix_initial_pressure
+ *        samples 8,9,10,11 are bobbing at the surface and should be fixed dif_alg_dive_truncate_dive
+ */
+dif_dive_collection_t *_create_simple_dive_collection() {
+    dif_dive_collection_t *dc = dif_dive_collection_alloc();
+
+    gdouble dive1_pressures[] =  {0.0, 0.0, 180.0, 179.0, 178.5, 177.5};
+    gdouble dive1_depths[] =     {0.0, 1.0, 2.0,   2.0,   1.0,   0.0};
+    guint   dive1_timestamps[] = {0,   30,  60,    90,    120,   150};
+    guint dive1_num_samples = sizeof(dive1_pressures)/sizeof(dive1_pressures[0]);
+    dif_dive_t *dive1 = dif_dive_alloc();
+    dc = dif_dive_collection_add_dive(dc, dive1);
+    guint ctr = 0;
+    for (ctr = 0; ctr < dive1_num_samples; ctr++) {
+        dif_sample_t *sample = dif_sample_alloc();
+        sample->timestamp = dive1_timestamps[ctr];
+        dif_subsample_t *sspressure = dif_subsample_alloc();
+        sspressure->type = DIF_SAMPLE_PRESSURE;
+        sspressure->value.pressure.tank = 1;
+        sspressure->value.pressure.value = dive1_pressures[ctr];
+
+        dif_subsample_t *ssdepth = dif_subsample_alloc();
+        ssdepth->type = DIF_SAMPLE_DEPTH;
+        sspressure->value.depth = dive1_depths[ctr];
+        sample = dif_sample_add_subsample(sample, sspressure);
+        sample = dif_sample_add_subsample(sample, ssdepth);
+        dive1 = dif_dive_add_sample(dive1, sample);
+    }
+
+    gdouble dive2_pressures[] =  {0.0, 0.0, 180.0, 179.0, 178.5, 177.5, 176.5, 177.5, 177.5, 177.5, 177.5, 177.5};
+    gdouble dive2_depths[] =     {0.0, 1.0, 2.0,   2.0,   1.0,   0.0,   2.0,   0.0,   0.2,   0.1,   0.0,   0.1};
+    guint   dive2_timestamps[] = {0,   30,  60,    90,    120,   150,   180,   210,   240,   270,   300,   330};
+    guint dive2_num_samples = sizeof(dive2_pressures)/sizeof(dive2_pressures[0]);
+
+    dif_dive_t *dive2 = dif_dive_alloc();
+    dc = dif_dive_collection_add_dive(dc, dive2);
+    for (ctr = 0; ctr < dive2_num_samples; ctr++) {
+        dif_sample_t *sample = dif_sample_alloc();
+        dif_subsample_t *sspressure = dif_subsample_alloc();
+        sample->timestamp = dive2_timestamps[ctr];
+        sspressure->type = DIF_SAMPLE_PRESSURE;
+        sspressure->value.pressure.tank = 1;
+        sspressure->value.pressure.value = dive2_pressures[ctr];
+
+        dif_subsample_t *ssdepth = dif_subsample_alloc();
+        ssdepth->type = DIF_SAMPLE_DEPTH;
+        sspressure->value.depth = dive2_depths[ctr];
+        sample = dif_sample_add_subsample(sample, sspressure);
+        sample = dif_sample_add_subsample(sample, ssdepth);
+        dive2 = dif_dive_add_sample(dive2, sample);
+    }
+
+
+    return dc;
+}
+
+START_TEST (test_dif_alg_dc_initial_pressure_fix)
+{
+    dif_dive_collection_t *dc = _create_simple_dive_collection();
+    dc = dif_alg_dc_initial_pressure_fix(dc);
+    GList *dives = g_list_first(dc->dives);
+    while (dives != NULL) {
+        dif_dive_t *dive = dives->data;
+        GList *samples = g_list_first(dive->samples);
+        while (samples != NULL) {
+            dif_sample_t *sample = samples->data;
+            dif_subsample_t *pressure = dif_sample_get_subsample(sample, DIF_SAMPLE_PRESSURE);
+            if (pressure != NULL) {
+                fail_unless(pressure->value.pressure.value > 1.0,
+                        "dif_alg_dc_initial_pressure_fix did not reset initial pressures above 1.0bar");
+            }
+            samples = g_list_next(samples);
+        }
+        dives = g_list_next(dives);
+    };
+}
+END_TEST
+
 Suite *
 dif_suite (void)
 {
@@ -143,6 +229,9 @@ dif_suite (void)
     tcase_add_test(tc_uddf, test_dif_save_dive_collection_uddf);
     suite_add_tcase(s, tc_uddf);
 
+    TCase *tc_algos = tcase_create("Algorithms");
+    tcase_add_test(tc_algos, test_dif_alg_dc_initial_pressure_fix);
+    suite_add_tcase(s, tc_algos);
     return s;
 }
 

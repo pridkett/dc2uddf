@@ -26,6 +26,17 @@
 static const char *g_cachedir = NULL;
 static int g_cachedir_read = 1;
 
+typedef struct program_options_t {
+    gchar *backend;
+    gchar *devname;
+    gchar *xmlfile;
+    gchar *logfile;
+    guchar truncateDives;
+    guchar initialPressureFix;
+    guchar dumpDives;
+    guchar dumpMemory;
+} program_options_t;
+
 typedef struct dive_data_t {
     dc_device_t *device;
     unsigned int number;
@@ -469,7 +480,7 @@ cancel_cb (void *userdata) {
 }
 
 static dc_status_t
-dowork(dc_context_t *context, dc_descriptor_t *descriptor, const char *devname, const char *rawfile, const char *xmlfile, int dumpMemory, int dumpDives, dc_buffer_t *fingerprint) {
+dowork(dc_context_t *context, dc_descriptor_t *descriptor, program_options_t *options, dc_buffer_t *fingerprint) {
     dc_status_t rc = DC_STATUS_SUCCESS;
 
     /* initialize the device data */
@@ -479,9 +490,9 @@ dowork(dc_context_t *context, dc_descriptor_t *descriptor, const char *devname, 
     message("Opening the device (%s, %s, %s.\n",
             dc_descriptor_get_vendor(descriptor),
             dc_descriptor_get_product(descriptor),
-            devname ? devname : "null");
+            options->devname ? options->devname : "null");
     dc_device_t *device = NULL;
-    rc = dc_device_open(&device, context, descriptor, devname);
+    rc = dc_device_open(&device, context, descriptor, options->devname);
     if (rc != DC_STATUS_SUCCESS) {
         WARNING("Error opening device.");
         return rc;
@@ -518,12 +529,12 @@ dowork(dc_context_t *context, dc_descriptor_t *descriptor, const char *devname, 
     }
 
     /* dump the memory if requested */
-    if (dumpMemory) {
+    if (options->dumpMemory) {
         WARNING("Memory dump not enabled.");
     }
 
     /* dump the dives if requested */
-    if (dumpDives) {
+    if (options->dumpDives) {
         /* initialize the dive data */
         dive_data_t divedata = {0};
         dif_dive_collection_t *dc = dif_dive_collection_alloc();
@@ -542,11 +553,22 @@ dowork(dc_context_t *context, dc_descriptor_t *descriptor, const char *devname, 
             return rc;
         }
 
-        dif_save_dive_collection_uddf(divedata.dc, (gchar *) xmlfile);
+        xml_options_t *xmlOptions = dif_xml_options_alloc();
+        xmlOptions->filename = options->xmlfile;
+
+        if (options->truncateDives) {
+            divedata.dc = dif_alg_dc_truncate_dives(divedata.dc);
+        }
+
+        if (options->initialPressureFix) {
+            divedata.dc = dif_alg_dc_initial_pressure_fix(divedata.dc);
+        }
+        dif_save_dive_collection_uddf_options(divedata.dc, xmlOptions);
 
         /* free the fingerprint buffer */
         dc_buffer_free(divedata.fingerprint);
         dif_dive_collection_free(divedata.dc);
+        dif_xml_options_free(xmlOptions);
     }
 
     /* close the device */
@@ -622,18 +644,16 @@ search(dc_descriptor_t **out, const char *name, dc_family_t backend, unsigned in
     return DC_STATUS_SUCCESS;
 }
 
-int dump_dives(char *backendname, char *devname, char *xmlfile, char *rawfile) {
+int dump_dives(program_options_t *options) {
     dc_family_t backend = DC_FAMILY_NULL;
     dc_loglevel_t loglevel = DC_LOGLEVEL_WARNING;
     const char *logfile = "output.log";
     const char *name = NULL;
     const char *fingerprint = NULL;
     unsigned int model = 0;
-    int dumpMemory = 0;
-    int dumpDives = 1;
 
-    if (backendname != NULL) {
-        backend = lookup_type(backendname);
+    if (options->backend != NULL) {
+        backend = lookup_type(options->backend);
     }
     signal (SIGINT, sighandler);
 
@@ -667,7 +687,7 @@ int dump_dives(char *backendname, char *devname, char *xmlfile, char *rawfile) {
     }
 
     dc_buffer_t *fp = fpconvert(fingerprint);
-    rc = dowork(context, descriptor, devname, rawfile, xmlfile, dumpMemory, dumpDives, fp);
+    rc = dowork(context, descriptor, options, fp);
     dc_buffer_free(fp);
     /* FIXME: why aren't calls to errmsg working? */
     // message("Result: %s\n", errmsg(rc));
@@ -688,6 +708,8 @@ void usage() {
     fprintf(stderr, "  -b,--backend BACKEND: use backend called BACKEND\n");
     fprintf(stderr, "  -d,--device DEVICE: use device called DEVICE\n");
     fprintf(stderr, "  -o,--output UDDFFILE: save UDDF to file called UDDFFILE\n");
+    fprintf(stderr, "  -i,--ipf: calculate initial pressure fix\n");
+    fprintf(stderr, "  -t,--truncate: truncate dives after surfacing\n");
     fprintf(stderr, "  --listbackends: print all the backends\n");
     fprintf(stderr, "  --listdevices: print all the devices\n");
     fprintf(stderr, "  -h,--help: print this help screen\n");
@@ -728,21 +750,28 @@ main(int argc, char **argv)
 {
     int opt;
 
-    gchar *backend = NULL;
-    gchar *devname = NULL;
-    gchar *xmlfile = "output.uddf";
-    gchar *rawfile = "output.raw";
+    program_options_t options;
+    options.backend = NULL;
+    options.devname = NULL;
+    options.xmlfile = "output.uddf";
+    options.truncateDives = 0;
+    options.initialPressureFix = 0;
+    options.logfile = "output.log";
+    options.dumpDives = 1;
+    options.dumpMemory = 0;
 
     static struct option long_options[] = {
             {"backend",      required_argument, NULL, 'b'},
             {"device",       required_argument, NULL, 'd'},
             {"output",       required_argument, NULL, 'o'},
             {"help",         no_argument,       NULL, 'h'},
+            {"ipf",          no_argument,       NULL, 'i'},
+            {"truncate",     no_argument,       NULL, 't'},
             {"listdevices",  no_argument,       NULL, 0},
             {"listbackends", no_argument,       NULL, 0},
             {NULL,           no_argument,       NULL, 0}
     };
-    char *getopt_short = "b:d:o:h";
+    char *getopt_short = "b:d:o:hit";
     /* getopt_long stores the option index here. */
     int option_index = 0;
 
@@ -765,15 +794,23 @@ main(int argc, char **argv)
             break;
 
         case 'b':
-            backend = optarg;
+            options.backend = optarg;
             break;
 
         case 'd':
-            devname = optarg;
+            options.devname = optarg;
             break;
 
         case 'o':
-            xmlfile = optarg;
+            options.xmlfile = optarg;
+            break;
+
+        case 'i':
+            options.initialPressureFix = 1;
+            break;
+
+        case 't':
+            options.truncateDives = 1;
             break;
 
         case '?':
@@ -789,9 +826,9 @@ main(int argc, char **argv)
                 long_options, &option_index);
     }
 
-    if (backend == NULL || devname == NULL) {
+    if (options.backend == NULL || options.devname == NULL) {
         usage();
     }
 
-    return dump_dives(backend, devname, xmlfile, rawfile);
+    return dump_dives(&options);
 }
