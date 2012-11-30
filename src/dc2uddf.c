@@ -681,18 +681,51 @@ int dump_dives(char *backendname, char *devname, char *xmlfile, char *rawfile) {
 }
 
 void usage() {
-    printf("usage: dc2uddf -b BACKEND -d DEVNAME [options]\n");
-    printf("example: dc2uddf -b smart -d \"Uwatec Galileo\"\n");
-    printf("\n");
-    printf("arguments:\n");
-    printf("  -b,--backend BACKEND: use backend called BACKEND\n");
-    printf("  -d,--device DEVICE: use device called DEVICE\n");
-    printf("  -o,--output UDDFFILE: save UDDF to file called UDDFFILE\n");
-    printf("  -h,--help: print this help screen\n");
+    fprintf(stderr, "usage: dc2uddf -b BACKEND -d DEVNAME [options]\n");
+    fprintf(stderr, "example: dc2uddf -b smart -d \"Uwatec Galileo\"\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "arguments:\n");
+    fprintf(stderr, "  -b,--backend BACKEND: use backend called BACKEND\n");
+    fprintf(stderr, "  -d,--device DEVICE: use device called DEVICE\n");
+    fprintf(stderr, "  -o,--output UDDFFILE: save UDDF to file called UDDFFILE\n");
+    fprintf(stderr, "  --listbackends: print all the backends\n");
+    fprintf(stderr, "  --listdevices: print all the devices\n");
+    fprintf(stderr, "  -h,--help: print this help screen\n");
     exit(EXIT_FAILURE);
 }
 
-int main(int argc, char **argv) {
+void
+print_backends()
+{
+    unsigned int i;
+    fprintf(stderr, "Supported backends:\n\n");
+    unsigned int nbackends = sizeof (g_backends) / sizeof (g_backends[0]);
+    for (i = 0; i < nbackends; ++i) {
+        fprintf(stderr, "  %s\n", g_backends[i].name);
+    }
+    exit(EXIT_FAILURE);
+}
+
+void
+print_devices()
+{
+    fprintf(stderr, "Supported devices:\n\n");
+    dc_iterator_t *iterator = NULL;
+    dc_descriptor_t *descriptor = NULL;
+    dc_descriptor_iterator (&iterator);
+    while (dc_iterator_next (iterator, &descriptor) == DC_STATUS_SUCCESS) {
+        fprintf (stderr, "   %s %s\n",
+            dc_descriptor_get_vendor (descriptor),
+            dc_descriptor_get_product (descriptor));
+        dc_descriptor_free (descriptor);
+    }
+    dc_iterator_free (iterator);
+    exit(EXIT_FAILURE);
+}
+
+int
+main(int argc, char **argv)
+{
     int opt;
 
     gchar *backend = NULL;
@@ -701,11 +734,13 @@ int main(int argc, char **argv) {
     gchar *rawfile = "output.raw";
 
     static struct option long_options[] = {
-            {"backend", required_argument, NULL, 'b'},
-            {"device",  required_argument, NULL, 'd'},
-            {"output",  required_argument, NULL, 'o'},
-            {"help",    no_argument,       NULL, 'h'},
-            {NULL,      no_argument,       NULL, 0}
+            {"backend",      required_argument, NULL, 'b'},
+            {"device",       required_argument, NULL, 'd'},
+            {"output",       required_argument, NULL, 'o'},
+            {"help",         no_argument,       NULL, 'h'},
+            {"listdevices",  no_argument,       NULL, 0},
+            {"listbackends", no_argument,       NULL, 0},
+            {NULL,           no_argument,       NULL, 0}
     };
     char *getopt_short = "b:d:o:h";
     /* getopt_long stores the option index here. */
@@ -721,10 +756,12 @@ int main(int argc, char **argv) {
             /* If this option set a flag, do nothing else now. */
             if (long_options[option_index].flag != 0)
                 break;
-            printf ("option %s", long_options[option_index].name);
-            if (optarg)
-                printf (" with arg %s", optarg);
-            printf ("\n");
+            if (g_strcmp0("listdevices", long_options[option_index].name) == 0) {
+                print_devices();
+            }
+            if (g_strcmp0("listbackends", long_options[option_index].name) == 0) {
+                print_backends();
+            }
             break;
 
         case 'b':
