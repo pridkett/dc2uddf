@@ -25,16 +25,8 @@ typedef struct dif_dive_t {
     GList *samples; /* a list of dif_sample_t */
 } dif_dive_t;
 
-typedef struct dif_gasmix_t {
-    guint id;
-    gdouble helium;
-    gdouble oxygen;
-    gdouble nitrogen;
-    gdouble argon;
-    gdouble hydrogen;
-} dif_gasmix_t;
-
 typedef enum dif_gasmix_type_t {
+    DIF_GASMIX_UNDEFINED,
     DIF_GASMIX_AIR,
     DIF_GASMIX_EANX30,
     DIF_GASMIX_EANX31,
@@ -50,6 +42,16 @@ typedef enum dif_gasmix_type_t {
     DIF_GASMIX_OXYGEN100,
     DIF_GASMIX_UNKNOWN,
 } dif_gasmix_type_t;
+
+typedef struct dif_gasmix_t {
+    guint id;
+    gdouble helium;
+    gdouble oxygen;
+    gdouble nitrogen;
+    gdouble argon;
+    gdouble hydrogen;
+    dif_gasmix_type_t type;
+} dif_gasmix_t;
 
 typedef enum dif_sample_type_t {
     DIF_SAMPLE_UNDEFINED,
@@ -160,6 +162,8 @@ dif_dive_t *dif_dive_set_maxdepth(dif_dive_t *dive, gdouble maxdepth);
 dif_gasmix_t *dif_gasmix_alloc();
 void dif_gasmix_free(dif_gasmix_t *gasmix);
 dif_gasmix_type_t dif_gasmix_type(dif_gasmix_t *gasmix);
+gchar *dif_gasmix_name(dif_gasmix_t *gasmix);
+gboolean dif_gasmix_is_valid(dif_gasmix_t *gasmix);
 dif_sample_t *dif_sample_alloc();
 void dif_sample_free(dif_sample_t *sample);
 dif_sample_t *dif_sample_add_subsample(dif_sample_t *sample, dif_subsample_t *subsample);

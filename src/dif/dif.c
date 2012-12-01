@@ -110,6 +110,7 @@ dif_gasmix_t *dif_gasmix_alloc() {
     gasmix->nitrogen = 79.0;
     gasmix->argon = 0.0;
     gasmix->hydrogen = 0.0;
+    gasmix->type = DIF_GASMIX_UNDEFINED;
     return gasmix;
 }
 
@@ -166,6 +167,78 @@ dif_gasmix_type_t dif_gasmix_type(dif_gasmix_t *gasmix) {
         return DIF_GASMIX_OXYGEN100;
     }
     return DIF_GASMIX_UNKNOWN;
+}
+
+gchar *dif_gasmix_name(dif_gasmix_t *gasmix) {
+    switch(dif_gasmix_type(gasmix)) {
+    case DIF_GASMIX_AIR:
+        return "air";
+        break;
+    case DIF_GASMIX_EANX30:
+        return "eanx30";
+        break;
+    case DIF_GASMIX_EANX31:
+        return "eanx31";
+        break;
+    case DIF_GASMIX_EANX32:
+        return "eanx32";
+        break;
+    case DIF_GASMIX_EANX33:
+        return "eanx33";
+        break;
+    case DIF_GASMIX_EANX34:
+        return "eanx34";
+        break;
+    case DIF_GASMIX_EANX35:
+        return "eanx35";
+        break;
+    case DIF_GASMIX_EANX36:
+        return "eanx36";
+        break;
+    case DIF_GASMIX_EANX37:
+        return "eanx37";
+        break;
+    case DIF_GASMIX_EANX38:
+        return "eanx38";
+        break;
+    case DIF_GASMIX_EANX39:
+        return "eanx39";
+        break;
+    case DIF_GASMIX_EANX40:
+        return "eanx40";
+        break;
+    case DIF_GASMIX_OXYGEN100:
+        return "pureoxygen";
+        break;
+    case DIF_GASMIX_UNKNOWN:
+    default:
+    {
+        gchar *gasmixName = g_malloc(26);
+        g_snprintf(gasmixName, 26, "mix_%02do2_%02dn2%02dhe%02dar%02dh2",
+                (gint)gasmix->oxygen, (gint)gasmix->nitrogen,
+                (gint)gasmix->helium, (gint)gasmix->argon,
+                (gint)gasmix->hydrogen);
+        return gasmixName;
+        break;
+    }
+    }
+    return NULL;
+}
+
+/**
+ * the Uwatec Galileo Luna usually reports extra tanks as 100% nitrogen
+ * this isn't a valid tank and no one would ever dive with a 100% n2 tank,
+ * so we ignore those tanks.
+ *
+ * for right now we do allow tanks with gas mixes that don't add up to one
+ * and tanks that are unbreatheable with other combinations (e.g. 100% Ar
+ * might be valid for drysuits).
+ */
+gboolean dif_gasmix_is_valid(dif_gasmix_t *gasmix) {
+    if (ABS(gasmix->nitrogen - 100) < GAS_EPSILON) {
+        return FALSE;
+    }
+    return TRUE;
 }
 
 /**

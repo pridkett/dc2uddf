@@ -1,6 +1,7 @@
 #include <libxml/parser.h>
 #include <libxml/tree.h>
 #include <glib.h>
+#include <stdio.h>
 #include "dif.h"
 
 #define DC2UDDF_VERSION "1.0"
@@ -194,6 +195,26 @@ xmlNodePtr _createDive(dif_dive_t *dive, gchar *diveid, xml_options_t *options) 
         xmlAddChild(xmlDive, xmlDateTime);
     }
 
+    /* if gasmixes are specified, then we'll link to them */
+    gchar *tempStr = g_malloc(MAX_STRING_LENGTH);
+    if (dive->gasmixes != NULL) {
+        guint ctr = 0;
+        GList *gasmixes = g_list_first(dive->gasmixes);
+        while (gasmixes != NULL) {
+            xmlNodePtr xmlTankdata = xmlNewNode(NULL, BAD_CAST "tankdata");
+            g_snprintf(tempStr, MAX_STRING_LENGTH, "%s_tank%d", diveid, ctr++);
+            xmlNewProp(xmlTankdata, BAD_CAST "id", BAD_CAST tempStr);
+            dif_gasmix_t *gasmix = gasmixes->data;
+            xmlNodePtr xmlLink = xmlNewNode(NULL, BAD_CAST "link");
+            xmlNewProp(xmlLink, BAD_CAST "ref", BAD_CAST dif_gasmix_name(gasmix));
+            xmlAddChild(xmlTankdata, xmlLink);
+            xmlAddChild(xmlDive, xmlTankdata);
+            gasmixes = g_list_next(gasmixes);
+        }
+    }
+    g_free(tempStr);
+
+    /* iterate over all of the samples */
     xmlNodePtr xmlSamples = xmlNewNode(NULL, BAD_CAST "samples");
     xmlAddChild(xmlDive, xmlSamples);
 
@@ -228,6 +249,78 @@ xmlNodePtr _createProfileData(dif_dive_collection_t *dc, xml_options_t *options)
     return profile_data;
 }
 
+xmlNodePtr _createGasDefinitions(dif_dive_collection_t *dc, xml_options_t *options) {
+    xmlNodePtr xmlGasDefinitions = xmlNewNode(NULL, BAD_CAST "gasdefinitions");
+
+    /* iterate over all of the dives and iterate over their gasmixes
+     * and store the different gas mixes in a hash table
+     */
+    GList *dives = g_list_first(dc->dives);
+    GHashTable *gasMixes = g_hash_table_new(g_str_hash, g_str_equal);
+    while(dives != NULL) {
+        dif_dive_t *dive = dives->data;
+        GList *diveMixes = g_list_first(dive->gasmixes);
+        while (diveMixes != NULL) {
+            dif_gasmix_t *gasmix = diveMixes->data;
+            gasmix->type = dif_gasmix_type(gasmix);
+            gchar *gasmixName = dif_gasmix_name(gasmix);
+            if (!g_hash_table_contains(gasMixes, gasmixName)) {
+                g_hash_table_insert(gasMixes, gasmixName, gasmix);
+            }
+            diveMixes = g_list_next(diveMixes);
+        }
+        dives = g_list_next(dives);
+    }
+
+    /* iterate over the hash table to output the mixes */
+    gchar *tempStr = g_malloc(MAX_STRING_LENGTH);
+    GHashTableIter iter;
+    gpointer key, value;
+
+    g_hash_table_iter_init (&iter, gasMixes);
+    while (g_hash_table_iter_next (&iter, &key, &value))
+    {
+        gchar *mixname = (gchar *)key;
+        dif_gasmix_t *gasmix = (dif_gasmix_t *)value;
+        xmlNodePtr xmlMix = xmlNewNode(NULL, BAD_CAST "mix");
+        xmlNewProp(xmlMix, BAD_CAST "id", BAD_CAST mixname);
+
+        xmlNodePtr xmlName = xmlNewNode(NULL, BAD_CAST "name");
+        xmlAddChild(xmlName, xmlNewText(BAD_CAST mixname));
+        xmlAddChild(xmlMix, xmlName);
+
+        xmlNodePtr xmlO2 = xmlNewNode(NULL, BAD_CAST "o2");
+        g_snprintf(tempStr, MAX_STRING_LENGTH, "%0.4f", gasmix->oxygen/100);
+        xmlAddChild(xmlO2, xmlNewText(BAD_CAST tempStr));
+        xmlAddChild(xmlMix, xmlO2);
+
+        xmlNodePtr xmlN2 = xmlNewNode(NULL, BAD_CAST "n2");
+        g_snprintf(tempStr, MAX_STRING_LENGTH, "%0.4f", gasmix->nitrogen/100);
+        xmlAddChild(xmlN2, xmlNewText(BAD_CAST tempStr));
+        xmlAddChild(xmlMix, xmlN2);
+
+        xmlNodePtr xmlHe = xmlNewNode(NULL, BAD_CAST "he");
+        g_snprintf(tempStr, MAX_STRING_LENGTH, "%0.4f", gasmix->helium/100);
+        xmlAddChild(xmlHe, xmlNewText(BAD_CAST tempStr));
+        xmlAddChild(xmlMix, xmlHe);
+
+        xmlNodePtr xmlAr = xmlNewNode(NULL, BAD_CAST "ar");
+        g_snprintf(tempStr, MAX_STRING_LENGTH, "%0.4f", gasmix->argon/100);
+        xmlAddChild(xmlAr, xmlNewText(BAD_CAST tempStr));
+        xmlAddChild(xmlMix, xmlAr);
+
+        xmlNodePtr xmlH2 = xmlNewNode(NULL, BAD_CAST "h2");
+        g_snprintf(tempStr, MAX_STRING_LENGTH, "%0.4f", gasmix->hydrogen/100);
+        xmlAddChild(xmlH2, xmlNewText(BAD_CAST tempStr));
+        xmlAddChild(xmlMix, xmlH2);
+
+        xmlAddChild(xmlGasDefinitions, xmlMix);
+    }
+    g_free(tempStr);
+
+    return xmlGasDefinitions;
+}
+
 xml_options_t *dif_xml_options_alloc() {
     xml_options_t *options = g_malloc(sizeof(xml_options_t));
     options->filename = NULL;
@@ -258,6 +351,7 @@ void dif_save_dive_collection_uddf_options(dif_dive_collection_t *dc, xml_option
     xmlNewProp(root_node, BAD_CAST "version", BAD_CAST UDDF_VERSION);
     xmlDocSetRootElement(doc, root_node);
     xmlAddChild(root_node, _createGeneratorBlock(options));
+    xmlAddChild(root_node, _createGasDefinitions(dc, options));
     printf("creating profile data\n");
     xmlAddChild(root_node, _createProfileData(dc, options));
     printf("saving data\n");

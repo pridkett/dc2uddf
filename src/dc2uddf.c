@@ -371,10 +371,14 @@ doparse(dif_dive_collection_t *dc, dc_device_t *device, const unsigned char data
             return DC_STATUS_NOMEMORY;
         }
         mix->id = i;
-        mix->helium = gasmix.helium;
-        mix->oxygen = gasmix.oxygen;
-        mix->nitrogen = gasmix.nitrogen;
-        dive = dif_dive_add_gasmix(dive, mix);
+        mix->helium = gasmix.helium * 100;
+        mix->oxygen = gasmix.oxygen * 100;
+        mix->nitrogen = gasmix.nitrogen * 100;
+        if (dif_gasmix_is_valid(mix)) {
+            dive = dif_dive_add_gasmix(dive, mix);
+        } else {
+            dif_gasmix_free(mix);
+        }
     }
 
     /* parse the sample data */
