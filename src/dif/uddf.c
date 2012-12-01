@@ -187,13 +187,15 @@ xmlNodePtr _createWaypoint(dif_sample_t *sample, xml_options_t *options) {
 xmlNodePtr _createDive(dif_dive_t *dive, gchar *diveid, xml_options_t *options) {
     xmlNodePtr xmlDive = xmlNewNode(NULL, BAD_CAST "dive");
     xmlNewProp(xmlDive, BAD_CAST "id", BAD_CAST diveid);
+    xmlNodePtr xmlInformationBeforeDive = xmlNewNode(NULL, BAD_CAST "informationbeforedive");
     xmlNodePtr xmlDateTime = xmlNewNode(NULL, BAD_CAST "datetime");
     if (dive->datetime != NULL) {
         gchar *dt = g_date_time_format(dive->datetime, "%Y-%m-%dT%H:%M:%S");
         xmlAddChild(xmlDateTime, xmlNewText(BAD_CAST dt));
         g_free(dt);
-        xmlAddChild(xmlDive, xmlDateTime);
+        xmlAddChild(xmlInformationBeforeDive, xmlDateTime);
     }
+    xmlAddChild(xmlDive, xmlInformationBeforeDive);
 
     /* if gasmixes are specified, then we'll link to them */
     gchar *tempStr = g_malloc(MAX_STRING_LENGTH);
