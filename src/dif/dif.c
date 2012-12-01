@@ -1,6 +1,8 @@
 #include <glib.h>
 #include "dif.h"
 
+#define GAS_EPSILON 0.1
+
 dif_dive_collection_t *dif_dive_collection_alloc() {
     dif_dive_collection_t *dc;
     dc = g_malloc(sizeof(dif_dive_collection_t));
@@ -95,12 +97,17 @@ void dif_subsample_free(dif_subsample_t *subsample) {
     g_free(subsample);
 }
 
+/**
+ * create a gasmix
+ *
+ * by default all gasmixes are air
+ */
 dif_gasmix_t *dif_gasmix_alloc() {
     dif_gasmix_t *gasmix;
     gasmix = g_malloc(sizeof(dif_gasmix_t));
-    gasmix->oxygen = 0.0;
+    gasmix->oxygen = 21.0;
     gasmix->helium = 0.0;
-    gasmix->nitrogen = 0.0;
+    gasmix->nitrogen = 79.0;
     gasmix->argon = 0.0;
     gasmix->hydrogen = 0.0;
     return gasmix;
@@ -110,6 +117,56 @@ void dif_gasmix_free(dif_gasmix_t *gasmix) {
     g_free(gasmix);
 }
 
+/**
+ * checks to see if a given gasmix is the composition specified
+ *
+ * this is generally used as a helper function for dif_gasmix_type, which is
+ * why it is not a public method
+ */
+gboolean _dif_is_gasmix(dif_gasmix_t *gasmix, gdouble o2, gdouble n2, gdouble he, gdouble ar, gdouble h2) {
+    if (ABS(gasmix->oxygen - o2) < GAS_EPSILON &&
+        ABS(gasmix->nitrogen - n2) < GAS_EPSILON &&
+        ABS(gasmix->helium - he) < GAS_EPSILON &&
+        ABS(gasmix->argon - ar) < GAS_EPSILON &&
+        ABS(gasmix->hydrogen - h2) < GAS_EPSILON) {
+        return TRUE;
+    }
+    return FALSE;
+}
+
+/**
+ * given a gasmix, return the type of the gasmix
+ */
+dif_gasmix_type_t dif_gasmix_type(dif_gasmix_t *gasmix) {
+    if (_dif_is_gasmix(gasmix, 21.0, 79.0, 0.0, 0.0, 0.0)) {
+        return DIF_GASMIX_AIR;
+    } else if (_dif_is_gasmix(gasmix, 30.0, 70.0, 0.0, 0.0, 0.0)) {
+        return DIF_GASMIX_EANX30;
+    } else if (_dif_is_gasmix(gasmix, 31.0, 69.0, 0.0, 0.0, 0.0)) {
+        return DIF_GASMIX_EANX31;
+    } else if (_dif_is_gasmix(gasmix, 32.0, 68.0, 0.0, 0.0, 0.0)) {
+        return DIF_GASMIX_EANX32;
+    } else if (_dif_is_gasmix(gasmix, 33.0, 67.0, 0.0, 0.0, 0.0)) {
+        return DIF_GASMIX_EANX33;
+    } else if (_dif_is_gasmix(gasmix, 34.0, 66.0, 0.0, 0.0, 0.0)) {
+        return DIF_GASMIX_EANX34;
+    } else if (_dif_is_gasmix(gasmix, 35.0, 65.0, 0.0, 0.0, 0.0)) {
+        return DIF_GASMIX_EANX35;
+    } else if (_dif_is_gasmix(gasmix, 36.0, 64.0, 0.0, 0.0, 0.0)) {
+        return DIF_GASMIX_EANX36;
+    } else if (_dif_is_gasmix(gasmix, 37.0, 63.0, 0.0, 0.0, 0.0)) {
+        return DIF_GASMIX_EANX37;
+    } else if (_dif_is_gasmix(gasmix, 38.0, 62.0, 0.0, 0.0, 0.0)) {
+        return DIF_GASMIX_EANX38;
+    } else if (_dif_is_gasmix(gasmix, 39.0, 61.0, 0.0, 0.0, 0.0)) {
+        return DIF_GASMIX_EANX39;
+    } else if (_dif_is_gasmix(gasmix, 40.0, 60.0, 0.0, 0.0, 0.0)) {
+        return DIF_GASMIX_EANX40;
+    } else if (_dif_is_gasmix(gasmix, 100.0, 0.0, 0.0, 0.0, 0.0)) {
+        return DIF_GASMIX_OXYGEN100;
+    }
+    return DIF_GASMIX_UNKNOWN;
+}
 
 /**
  * given a sample, get the subsample that matches the particular type

@@ -223,6 +223,36 @@ START_TEST (test_dif_alg_dc_truncate_dives)
 }
 END_TEST
 
+START_TEST (test_dif_gasmix_type)
+{
+    dif_gasmix_t *gasmix = dif_gasmix_alloc();
+
+    fail_unless(dif_gasmix_type(gasmix) == DIF_GASMIX_AIR,
+                "gasmix failed to test as AIR");
+
+    gasmix->oxygen = 30.0;
+    gasmix->nitrogen = 70.0;
+    fail_unless(dif_gasmix_type(gasmix) == DIF_GASMIX_EANX30,
+                "gasmix failed to test as EANX30");
+
+    gasmix->oxygen = 100.0;
+    gasmix->nitrogen = 0.0;
+    fail_unless(dif_gasmix_type(gasmix) == DIF_GASMIX_OXYGEN100,
+                "gasmix failed to test as OXYGEN100");
+
+    /* right now the library doesn't understand trimix. I don't do
+     * trimix and I don't know enough about how to name the different
+     * gas mixtures to account for this right now
+     */
+    gasmix->oxygen  = 15.0;
+    gasmix->nitrogen = 40.0;
+    gasmix->helium = 45.0;
+    fail_unless(dif_gasmix_type(gasmix) == DIF_GASMIX_UNKNOWN,
+                "gasmix failed to test as UNKNOWN");
+    dif_gasmix_free(gasmix);
+}
+END_TEST
+
 Suite *
 dif_suite (void)
 {
@@ -240,6 +270,10 @@ dif_suite (void)
     tcase_add_test(tc_core, test_dif_dive_add_gasmix);
     tcase_add_test(tc_core, test_dif_sample_add_subsample);
     suite_add_tcase(s, tc_core);
+
+    TCase *tc_methods = tcase_create("Methods");
+    tcase_add_test(tc_methods, test_dif_gasmix_type);
+    suite_add_tcase(s, tc_methods);
 
     TCase *tc_uddf = tcase_create("UDDF");
     tcase_add_test(tc_uddf, test_dif_save_dive_collection_uddf);

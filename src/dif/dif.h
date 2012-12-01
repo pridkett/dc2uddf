@@ -34,6 +34,23 @@ typedef struct dif_gasmix_t {
     gdouble hydrogen;
 } dif_gasmix_t;
 
+typedef enum dif_gasmix_type_t {
+    DIF_GASMIX_AIR,
+    DIF_GASMIX_EANX30,
+    DIF_GASMIX_EANX31,
+    DIF_GASMIX_EANX32,
+    DIF_GASMIX_EANX33,
+    DIF_GASMIX_EANX34,
+    DIF_GASMIX_EANX35,
+    DIF_GASMIX_EANX36,
+    DIF_GASMIX_EANX37,
+    DIF_GASMIX_EANX38,
+    DIF_GASMIX_EANX39,
+    DIF_GASMIX_EANX40,
+    DIF_GASMIX_OXYGEN100,
+    DIF_GASMIX_UNKNOWN,
+} dif_gasmix_type_t;
+
 typedef enum dif_sample_type_t {
     DIF_SAMPLE_UNDEFINED,
     DIF_SAMPLE_TIME,
@@ -142,6 +159,7 @@ dif_dive_t *dif_dive_set_duration(dif_dive_t *dive, guint duration);
 dif_dive_t *dif_dive_set_maxdepth(dif_dive_t *dive, gdouble maxdepth);
 dif_gasmix_t *dif_gasmix_alloc();
 void dif_gasmix_free(dif_gasmix_t *gasmix);
+dif_gasmix_type_t dif_gasmix_type(dif_gasmix_t *gasmix);
 dif_sample_t *dif_sample_alloc();
 void dif_sample_free(dif_sample_t *sample);
 dif_sample_t *dif_sample_add_subsample(dif_sample_t *sample, dif_subsample_t *subsample);
