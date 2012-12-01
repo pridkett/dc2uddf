@@ -115,12 +115,13 @@ void dif_gasmix_free(dif_gasmix_t *gasmix) {
  * given a sample, get the subsample that matches the particular type
  */
 dif_subsample_t *dif_sample_get_subsample(dif_sample_t *sample, dif_sample_type_t sampleType) {
-    GList *subsamples = sample->subsamples;
+    GList *subsamples = g_list_first(sample->subsamples);
     while (subsamples != NULL) {
         dif_subsample_t *subsample = subsamples->data;
         if (subsample->type == sampleType) {
             return subsample;
         }
+        subsamples = g_list_next(subsamples);
     }
     return NULL;
 }

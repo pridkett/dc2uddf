@@ -152,7 +152,7 @@ dif_dive_collection_t *_create_simple_dive_collection() {
 
         dif_subsample_t *ssdepth = dif_subsample_alloc();
         ssdepth->type = DIF_SAMPLE_DEPTH;
-        sspressure->value.depth = dive1_depths[ctr];
+        ssdepth->value.depth = dive1_depths[ctr];
         sample = dif_sample_add_subsample(sample, sspressure);
         sample = dif_sample_add_subsample(sample, ssdepth);
         dive1 = dif_dive_add_sample(dive1, sample);
@@ -175,7 +175,7 @@ dif_dive_collection_t *_create_simple_dive_collection() {
 
         dif_subsample_t *ssdepth = dif_subsample_alloc();
         ssdepth->type = DIF_SAMPLE_DEPTH;
-        sspressure->value.depth = dive2_depths[ctr];
+        ssdepth->value.depth = dive2_depths[ctr];
         sample = dif_sample_add_subsample(sample, sspressure);
         sample = dif_sample_add_subsample(sample, ssdepth);
         dive2 = dif_dive_add_sample(dive2, sample);
@@ -207,6 +207,22 @@ START_TEST (test_dif_alg_dc_initial_pressure_fix)
 }
 END_TEST
 
+START_TEST (test_dif_alg_dc_truncate_dives)
+{
+    dif_dive_collection_t *dc = _create_simple_dive_collection();
+    dc = dif_alg_dc_truncate_dives(dc);
+    GList *dives = g_list_first(dc->dives);
+    dif_dive_t *dive = dives->data;
+    fail_unless(g_list_length(dive->samples) == 6,
+                "dif_alg_dc_truncate_dives truncated too many dives");
+
+    dives = g_list_next(dives);
+    dive = dives->data;
+    fail_unless(g_list_length(dive->samples) == 8,
+                "dif_alg_dc_trunacte_dives didn't properly truncate dives");
+}
+END_TEST
+
 Suite *
 dif_suite (void)
 {
@@ -231,6 +247,7 @@ dif_suite (void)
 
     TCase *tc_algos = tcase_create("Algorithms");
     tcase_add_test(tc_algos, test_dif_alg_dc_initial_pressure_fix);
+    tcase_add_test(tc_algos, test_dif_alg_dc_truncate_dives);
     suite_add_tcase(s, tc_algos);
     return s;
 }
