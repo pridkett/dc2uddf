@@ -256,3 +256,53 @@ dif_subsample_t *dif_sample_get_subsample(dif_sample_t *sample, dif_sample_type_
     return NULL;
 }
 
+gint _dif_dive_compare(gconstpointer a, gconstpointer b) {
+    dif_dive_t *dive1 = (dif_dive_t *)a;
+    dif_dive_t *dive2 = (dif_dive_t *)b;
+    GDateTime *time1 = dive1->datetime;
+    GDateTime *time2 = dive2->datetime;
+    if (time1 != NULL && time2 != NULL) {
+        return g_date_time_compare(time1, time2);
+    } else if (time1 != NULL && time2 == NULL) {
+        return -1;
+    } else if (time1 == NULL && time2 != NULL) {
+        return 1;
+    } else {
+        return 0;
+    }
+    return 0;
+}
+
+/**
+ * sorts dives in ascending order by their timestamp
+ *
+ * dives with no timestamp are put to the end of the list
+ */
+dif_dive_collection_t *dif_dive_collection_sort_dives(dif_dive_collection_t *dc) {
+    GList *dives = dc->dives;
+    dc->dives = g_list_sort(dives, _dif_dive_compare);
+    return dc;
+}
+
+gint _dif_dive_sample_compare(gconstpointer a, gconstpointer b) {
+    dif_sample_t *s1 = (dif_sample_t *)a;
+    dif_sample_t *s2 = (dif_sample_t *)b;
+
+    if (s1->timestamp < s2->timestamp) {
+        return -1;
+    }
+    if (s1->timestamp > s2->timestamp) {
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * sorts samples in ascending order by their timestamp
+ */
+dif_dive_t *dif_dive_sort_samples(dif_dive_t *dive) {
+    GList *samples = dive->samples;
+    dive->samples = g_list_sort(samples, _dif_dive_sample_compare);
+    return dive;
+}
+

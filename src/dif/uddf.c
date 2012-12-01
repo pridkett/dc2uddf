@@ -219,7 +219,7 @@ xmlNodePtr _createDive(dif_dive_t *dive, gchar *diveid, xml_options_t *options) 
     /* iterate over all of the samples */
     xmlNodePtr xmlSamples = xmlNewNode(NULL, BAD_CAST "samples");
     xmlAddChild(xmlDive, xmlSamples);
-
+    dive = dif_dive_sort_samples(dive);
     GList *samples = g_list_first(dive->samples);
     while (samples != NULL) {
         xmlNodePtr xmlWaypoint = _createWaypoint(samples->data, options);
@@ -229,13 +229,13 @@ xmlNodePtr _createDive(dif_dive_t *dive, gchar *diveid, xml_options_t *options) 
     return xmlDive;
 }
 
-xmlNodePtr _createRepetitionGroup(dif_dive_collection_t *dc, xml_options_t *options) {
+xmlNodePtr _createRepetitionGroup(GList *dives, gchar *groupid, xml_options_t *options) {
     xmlNodePtr repetitionGroup = xmlNewNode(NULL, BAD_CAST "repetitiongroup");
-    xmlNewProp(repetitionGroup, BAD_CAST "id", BAD_CAST "group1");
+    xmlNewProp(repetitionGroup, BAD_CAST "id", BAD_CAST groupid);
 
     guint ctr = 0;
     gchar *diveid = g_malloc(MAX_STRING_LENGTH);
-    GList *dives = g_list_first(dc->dives);
+    dives = g_list_first(dives);
     while (dives != NULL) {
         g_snprintf(diveid, MAX_STRING_LENGTH, "dive%d", ctr++);
         xmlAddChild(repetitionGroup, _createDive(dives->data, diveid, options));
@@ -247,7 +247,45 @@ xmlNodePtr _createRepetitionGroup(dif_dive_collection_t *dc, xml_options_t *opti
 
 xmlNodePtr _createProfileData(dif_dive_collection_t *dc, xml_options_t *options) {
     xmlNodePtr profile_data = xmlNewNode(NULL, BAD_CAST "profiledata");
-    xmlAddChild(profile_data, _createRepetitionGroup(dc, options));
+
+    gchar *groupid = g_malloc(MAX_STRING_LENGTH);
+    dc = dif_dive_collection_sort_dives(dc);
+    GList *dives = g_list_first(dc->dives);
+    int year1 = 0, month1 = 0, day1 = 0;
+    int year2 = 0, month2 = 0, day2 = 0;
+    GList *repetitionDives = NULL;
+    guint groupCtr = 0;
+    while (dives != NULL) {
+        dif_dive_t *dive = dives->data;
+        GDateTime *dt = dive->datetime;
+        /* if a date isn't present, always give it a new repetition group */
+        if (dt != NULL) {
+            g_date_time_get_ymd(dt, &year2, &month2, &year2);
+        } else {
+            year2 = year1 ++;
+        }
+        /* if this next dive doesn't belong to this group, output the current
+         * repetition group and clear the list
+         */
+        if (year1 != year2 || month1 != month2 || day1 != day2) {
+            if (repetitionDives != NULL) {
+                g_snprintf(groupid, MAX_STRING_LENGTH, "group%d", groupCtr++);
+                xmlAddChild(profile_data, _createRepetitionGroup(repetitionDives, groupid, options));
+                g_list_free (repetitionDives);
+            }
+            repetitionDives = NULL;
+        }
+        repetitionDives = g_list_append(repetitionDives, dive);
+        year1 = year2; month1 = month2; day1 = day2;
+        dives = g_list_next(dives);
+    }
+    if (repetitionDives != NULL) {
+        g_snprintf(groupid, MAX_STRING_LENGTH, "group%d", groupCtr++);
+        xmlAddChild(profile_data, _createRepetitionGroup(repetitionDives, groupid, options));
+        g_list_free (repetitionDives);
+    }
+    g_free(groupid);
+
     return profile_data;
 }
 

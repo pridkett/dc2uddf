@@ -21,6 +21,7 @@ dif_dive_collection_t *_create_simple_dive_collection() {
     guint   dive1_timestamps[] = {0,   30,  60,    90,    120,   150};
     guint dive1_num_samples = sizeof(dive1_pressures)/sizeof(dive1_pressures[0]);
     dif_dive_t *dive1 = dif_dive_alloc();
+    dive1 = dif_dive_set_datetime_utc(dive1, 2012, 02, 01, 12, 00, 00);
     dc = dif_dive_collection_add_dive(dc, dive1);
     guint ctr = 0;
     for (ctr = 0; ctr < dive1_num_samples; ctr++) {
@@ -49,6 +50,7 @@ dif_dive_collection_t *_create_simple_dive_collection() {
     guint dive2_num_samples = sizeof(dive2_pressures)/sizeof(dive2_pressures[0]);
 
     dif_dive_t *dive2 = dif_dive_alloc();
+    dive2 = dif_dive_set_datetime_utc(dive2, 2012, 02, 01, 12, 00, 00);
     dc = dif_dive_collection_add_dive(dc, dive2);
     for (ctr = 0; ctr < dive2_num_samples; ctr++) {
         dif_sample_t *sample = dif_sample_alloc();
@@ -67,6 +69,32 @@ dif_dive_collection_t *_create_simple_dive_collection() {
     }
     dif_gasmix_t *gasmix2 = dif_gasmix_alloc();
     dif_dive_add_gasmix(dive2, gasmix2);
+
+    gdouble dive3_pressures[] =  {0.0, 0.0, 180.0, 179.0, 178.5, 177.5, 176.5, 177.5, 177.5, 177.5, 177.5, 177.5};
+    gdouble dive3_depths[] =     {0.0, 1.0, 2.0,   2.0,   1.0,   0.0,   2.0,   0.0,   0.2,   0.1,   0.0,   0.1};
+    guint   dive3_timestamps[] = {0,   30,  60,    90,    120,   150,   180,   210,   240,   270,   300,   330};
+    guint dive3_num_samples = sizeof(dive3_pressures)/sizeof(dive3_pressures[0]);
+
+    dif_dive_t *dive3 = dif_dive_alloc();
+    dive3 = dif_dive_set_datetime_utc(dive3, 2012, 02, 02, 12, 00, 00);
+    dc = dif_dive_collection_add_dive(dc, dive3);
+    for (ctr = 0; ctr < dive3_num_samples; ctr++) {
+        dif_sample_t *sample = dif_sample_alloc();
+        dif_subsample_t *sspressure = dif_subsample_alloc();
+        sample->timestamp = dive3_timestamps[ctr];
+        sspressure->type = DIF_SAMPLE_PRESSURE;
+        sspressure->value.pressure.tank = 1;
+        sspressure->value.pressure.value = dive3_pressures[ctr];
+
+        dif_subsample_t *ssdepth = dif_subsample_alloc();
+        ssdepth->type = DIF_SAMPLE_DEPTH;
+        ssdepth->value.depth = dive3_depths[ctr];
+        sample = dif_sample_add_subsample(sample, sspressure);
+        sample = dif_sample_add_subsample(sample, ssdepth);
+        dive3 = dif_dive_add_sample(dive3, sample);
+    }
+    dif_gasmix_t *gasmix3 = dif_gasmix_alloc();
+    dif_dive_add_gasmix(dive3, gasmix3);
 
     return dc;
 }
