@@ -23,6 +23,7 @@ typedef struct dif_dive_t {
     gdouble maxdepth;
     GList *gasmixes; /* a list of dif_gasmix_t */
     GList *samples; /* a list of dif_sample_t */
+    gint surfaceInterval; /* number of seconds since the last dive */
 } dif_dive_t;
 
 typedef enum dif_gasmix_type_t {
@@ -152,6 +153,7 @@ dif_dive_collection_t *dif_dive_collection_alloc();
 void dif_dive_collection_free(dif_dive_collection_t *dc);
 dif_dive_collection_t *dif_dive_collection_add_dive(dif_dive_collection_t *dc, dif_dive_t *dive);
 dif_dive_collection_t *dif_dive_collection_sort_dives(dif_dive_collection_t *dc);
+dif_dive_collection_t *dif_dive_collection_calculate_surface_interval(dif_dive_collection_t *dc);
 dif_dive_t *dif_dive_alloc();
 void dif_dive_free(dif_dive_t *dive);
 dif_dive_t *dif_dive_add_sample(dif_dive_t *dive, dif_sample_t *sample);

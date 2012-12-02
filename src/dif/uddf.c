@@ -185,6 +185,8 @@ xmlNodePtr _createWaypoint(dif_sample_t *sample, xml_options_t *options) {
 }
 
 xmlNodePtr _createDive(dif_dive_t *dive, gchar *diveid, xml_options_t *options) {
+    gchar *tempStr = g_malloc(MAX_STRING_LENGTH);
+
     xmlNodePtr xmlDive = xmlNewNode(NULL, BAD_CAST "dive");
     xmlNewProp(xmlDive, BAD_CAST "id", BAD_CAST diveid);
     xmlNodePtr xmlInformationBeforeDive = xmlNewNode(NULL, BAD_CAST "informationbeforedive");
@@ -195,10 +197,21 @@ xmlNodePtr _createDive(dif_dive_t *dive, gchar *diveid, xml_options_t *options) 
         g_free(dt);
         xmlAddChild(xmlInformationBeforeDive, xmlDateTime);
     }
+
+    xmlNodePtr xmlSurfaceIntervalBeforeDive = xmlNewNode(NULL, BAD_CAST "surfaceintervalbeforedive");
+    if (dive->surfaceInterval < 0) {
+        xmlNodePtr xmlInfinity = xmlNewNode(NULL, BAD_CAST "infinity");
+        xmlAddChild(xmlSurfaceIntervalBeforeDive, xmlInfinity);
+    } else {
+        xmlNodePtr xmlPassedTime = xmlNewNode(NULL, BAD_CAST "passedtime");
+        g_snprintf(tempStr, MAX_STRING_LENGTH, "%0.1f", (gdouble)dive->surfaceInterval);
+        xmlAddChild(xmlPassedTime, xmlNewText(BAD_CAST tempStr));
+        xmlAddChild(xmlSurfaceIntervalBeforeDive, xmlPassedTime);
+    }
+    xmlAddChild(xmlInformationBeforeDive, xmlSurfaceIntervalBeforeDive);
     xmlAddChild(xmlDive, xmlInformationBeforeDive);
 
     /* if gasmixes are specified, then we'll link to them */
-    gchar *tempStr = g_malloc(MAX_STRING_LENGTH);
     if (dive->gasmixes != NULL) {
         guint ctr = 0;
         GList *gasmixes = g_list_first(dive->gasmixes);
@@ -250,6 +263,8 @@ xmlNodePtr _createProfileData(dif_dive_collection_t *dc, xml_options_t *options)
 
     gchar *groupid = g_malloc(MAX_STRING_LENGTH);
     dc = dif_dive_collection_sort_dives(dc);
+    dc = dif_dive_collection_calculate_surface_interval(dc);
+
     GList *dives = g_list_first(dc->dives);
     int year1 = 0, month1 = 0, day1 = 0;
     int year2 = 0, month2 = 0, day2 = 0;

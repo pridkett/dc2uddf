@@ -2,6 +2,7 @@
 #include "dif.h"
 
 #define GAS_EPSILON 0.1
+#define SURFACE_INTERVAL_MAX 86400
 
 dif_dive_collection_t *dif_dive_collection_alloc() {
     dif_dive_collection_t *dc;
@@ -26,6 +27,7 @@ dif_dive_t *dif_dive_alloc() {
     dive->samples = NULL;
     dive->gasmixes = NULL;
     dive->datetime = NULL;
+    dive->surfaceInterval = -1;
     dive = dif_dive_set_datetime(dive, 2000,01,01,12,00,00);
     return dive;
 }
@@ -306,3 +308,34 @@ dif_dive_t *dif_dive_sort_samples(dif_dive_t *dive) {
     return dive;
 }
 
+/**
+ * calculate and assign the surface interval between dives
+ */
+dif_dive_collection_t *dif_dive_collection_calculate_surface_interval(dif_dive_collection_t *dc) {
+    dc = dif_dive_collection_sort_dives(dc);
+    GList *dives = dc->dives;
+    dif_dive_t *previousDive = NULL;
+    while (dives != NULL) {
+        dif_dive_t *thisDive = dives->data;
+        if (thisDive->duration == 0 && thisDive->samples) {
+            thisDive = dif_dive_sort_samples(thisDive);
+            dif_sample_t *firstSample = g_list_first(thisDive->samples)->data;
+            dif_sample_t *lastSample = g_list_last(thisDive->samples)->data;
+            thisDive->duration = lastSample->timestamp - firstSample->timestamp;
+        }
+        if (previousDive == NULL) {
+            thisDive->surfaceInterval = -1;
+        } else {
+            GDateTime *previousTime = previousDive->datetime;
+            previousTime = g_date_time_add_seconds(previousTime, previousDive->duration);
+            GTimeSpan diff = g_date_time_difference(thisDive->datetime, previousTime);
+            thisDive->surfaceInterval = diff/G_TIME_SPAN_SECOND;
+            if (thisDive->surfaceInterval > SURFACE_INTERVAL_MAX) {
+                thisDive->surfaceInterval = -1;
+            }
+        }
+        previousDive = thisDive;
+        dives = g_list_next(dives);
+    }
+    return dc;
+}

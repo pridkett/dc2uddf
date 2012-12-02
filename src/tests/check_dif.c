@@ -50,7 +50,7 @@ dif_dive_collection_t *_create_simple_dive_collection() {
     guint dive2_num_samples = sizeof(dive2_pressures)/sizeof(dive2_pressures[0]);
 
     dif_dive_t *dive2 = dif_dive_alloc();
-    dive2 = dif_dive_set_datetime_utc(dive2, 2012, 02, 01, 12, 00, 00);
+    dive2 = dif_dive_set_datetime_utc(dive2, 2012, 02, 01, 14, 00, 00);
     dc = dif_dive_collection_add_dive(dc, dive2);
     for (ctr = 0; ctr < dive2_num_samples; ctr++) {
         dif_sample_t *sample = dif_sample_alloc();
