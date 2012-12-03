@@ -8,10 +8,28 @@
 #define DC2UDDF_AUTHOR "Patrick Wagstrom"
 #define DC2UDDF_EMAIL "patrick@wagstrom.net"
 #define UDDF_VERSION "3.1.0"
+#define UDDF_NAMESPACE "http://www.streit.cc/uddf/3.1/"
 
 #define MAX_STRING_LENGTH 100
 #define BAR_TO_PASCAL(a) (a*100000)
 #define CELSIUS_TO_KELVIN(a) (a+273.15)
+
+/**
+ * helper function for creating datetime nodes
+ */
+xmlNodePtr _createDateTime(GDateTime *dt, xml_options_t *options) {
+    xmlNodePtr xmlDateTime = xmlNewNode(NULL, BAD_CAST "datetime");
+    gchar *tzstr = g_date_time_format(dt, "%z");
+    gchar *dtstr = g_date_time_format(dt, "%Y-%m-%dT%H:%M:%S");
+    gchar *xmlstr = g_malloc(MAX_STRING_LENGTH);
+    g_snprintf(xmlstr, MAX_STRING_LENGTH, "%s%c%c%c:%c%c",
+            dtstr, tzstr[0], tzstr[1], tzstr[2], tzstr[3], tzstr[4]);
+    xmlAddChild(xmlDateTime, xmlNewText(BAD_CAST xmlstr));
+    g_free(dtstr);
+    g_free(tzstr);
+    g_free(xmlstr);
+    return xmlDateTime;
+}
 
 /**
  * Creates the simple generator XML block
@@ -56,6 +74,10 @@ xmlNodePtr _createGeneratorBlock(xml_options_t *options) {
     xmlAddChild(email, xmlNewText(BAD_CAST DC2UDDF_EMAIL));
     xmlAddChild(contact, email);
     xmlAddChild(manufacturer, contact);
+
+    GDateTime *dt = g_date_time_new_now_utc();
+    xmlAddChild(generator, _createDateTime(dt, options));
+    g_date_time_unref(dt);
 
     xmlAddChild(generator, manufacturer);
 
@@ -190,12 +212,9 @@ xmlNodePtr _createDive(dif_dive_t *dive, gchar *diveid, xml_options_t *options) 
     xmlNodePtr xmlDive = xmlNewNode(NULL, BAD_CAST "dive");
     xmlNewProp(xmlDive, BAD_CAST "id", BAD_CAST diveid);
     xmlNodePtr xmlInformationBeforeDive = xmlNewNode(NULL, BAD_CAST "informationbeforedive");
-    xmlNodePtr xmlDateTime = xmlNewNode(NULL, BAD_CAST "datetime");
     if (dive->datetime != NULL) {
-        gchar *dt = g_date_time_format(dive->datetime, "%Y-%m-%dT%H:%M:%S");
-        xmlAddChild(xmlDateTime, xmlNewText(BAD_CAST dt));
-        g_free(dt);
-        xmlAddChild(xmlInformationBeforeDive, xmlDateTime);
+        GDateTime *dt = dive->datetime;
+        xmlAddChild(xmlInformationBeforeDive, _createDateTime(dt, options));
     }
 
     xmlNodePtr xmlSurfaceIntervalBeforeDive = xmlNewNode(NULL, BAD_CAST "surfaceintervalbeforedive");
@@ -403,6 +422,7 @@ void dif_save_dive_collection_uddf_options(dif_dive_collection_t *dc, xml_option
     printf("saving file to %s\n", options->filename);
     doc = xmlNewDoc(BAD_CAST "1.0");
     root_node = xmlNewNode(NULL, BAD_CAST "uddf");
+    xmlNsPtr nsptr = xmlNewNs(root_node, UDDF_NAMESPACE, NULL);
     xmlNewProp(root_node, BAD_CAST "version", BAD_CAST UDDF_VERSION);
     xmlDocSetRootElement(doc, root_node);
     xmlAddChild(root_node, _createGeneratorBlock(options));
