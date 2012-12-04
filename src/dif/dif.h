@@ -7,6 +7,9 @@ extern "C" {
 
 #include <glib.h>
 
+#define GAS_EPSILON 0.1
+#define SURFACE_INTERVAL_MAX 86400
+
 /**
  * a dive collection is used for a set of dives downloaded from a computer
  */
@@ -163,6 +166,7 @@ dif_dive_t *dif_dive_set_datetime_utc(dif_dive_t *dive, guint year, guint month,
 dif_dive_t *dif_dive_set_duration(dif_dive_t *dive, guint duration);
 dif_dive_t *dif_dive_set_maxdepth(dif_dive_t *dive, gdouble maxdepth);
 dif_dive_t *dif_dive_sort_samples(dif_dive_t *dive);
+gdouble dif_dive_get_initial_pressure(dif_dive_t *dive, gint tank);
 dif_gasmix_t *dif_gasmix_alloc();
 void dif_gasmix_free(dif_gasmix_t *gasmix);
 dif_gasmix_type_t dif_gasmix_type(dif_gasmix_t *gasmix);

@@ -1,9 +1,6 @@
 #include <glib.h>
 #include "dif.h"
 
-#define GAS_EPSILON 0.1
-#define SURFACE_INTERVAL_MAX 86400
-
 dif_dive_collection_t *dif_dive_collection_alloc() {
     dif_dive_collection_t *dc;
     dc = g_malloc(sizeof(dif_dive_collection_t));
@@ -247,6 +244,9 @@ gboolean dif_gasmix_is_valid(dif_gasmix_t *gasmix) {
  * given a sample, get the subsample that matches the particular type
  */
 dif_subsample_t *dif_sample_get_subsample(dif_sample_t *sample, dif_sample_type_t sampleType) {
+    if (sample == NULL) {
+        return NULL;
+    }
     GList *subsamples = g_list_first(sample->subsamples);
     while (subsamples != NULL) {
         dif_subsample_t *subsample = subsamples->data;
@@ -338,4 +338,27 @@ dif_dive_collection_t *dif_dive_collection_calculate_surface_interval(dif_dive_c
         dives = g_list_next(dives);
     }
     return dc;
+}
+
+/**
+ * given a dive, get the first valid pressure
+ *
+ * @param dive: the dif_dive_t object
+ * @param tank: the id of the tank to scan for. Using -1 gets the first valid tank
+ * @return: the first valid pressure, or 0.0 if not found
+ */
+gdouble dif_dive_get_initial_pressure(dif_dive_t *dive, gint tank) {
+    GList *samples = g_list_first(dive->samples);
+    gdouble initialPressure = 0.0;
+    while (samples != NULL && initialPressure < GAS_EPSILON) {
+        dif_sample_t *sample = samples->data;
+        dif_subsample_t *subsample = dif_sample_get_subsample(sample, DIF_SAMPLE_PRESSURE);
+        if (subsample != NULL) {
+            if ((tank < 0 || subsample->value.pressure.tank == tank) && subsample->value.pressure.value > GAS_EPSILON) {
+                initialPressure = subsample->value.pressure.value;
+            }
+        }
+        samples = g_list_next(samples);
+    }
+    return initialPressure;
 }

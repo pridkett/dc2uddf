@@ -15,6 +15,18 @@
 #define CELSIUS_TO_KELVIN(a) (a+273.15)
 
 /**
+ * helper function for comparing two nodes and sorting them
+ *
+ * This is mainly used for the <waypoint> tag which requires that each of the
+ * subsamples be in alphabetical order
+ */
+gint _g_list_sort_xmlNodePtrs(gconstpointer a, gconstpointer b) {
+    xmlNodePtr node1 = (xmlNodePtr) a;
+    xmlNodePtr node2 = (xmlNodePtr) b;
+    return xmlStrcmp(node1->name, node2->name);
+}
+
+/**
  * helper function for creating datetime nodes
  */
 xmlNodePtr _createDateTime(GDateTime *dt, xml_options_t *options) {
@@ -49,6 +61,9 @@ xmlNodePtr _createDateTime(GDateTime *dt, xml_options_t *options) {
  *       <version>3.14159</version>
  *       <datetime>2004-09-30</datetime>
  *   </generator>
+ *
+ * The schema is VERY picky about the formatting of this element, everything
+ * must appear in the exact order.
  */
 xmlNodePtr _createGeneratorBlock(xml_options_t *options) {
     xmlNodePtr generator = xmlNewNode(NULL, BAD_CAST "generator");
@@ -61,11 +76,8 @@ xmlNodePtr _createGeneratorBlock(xml_options_t *options) {
     xmlAddChild(type, xmlNewText(BAD_CAST "converter"));
     xmlAddChild(generator, type);
 
-    xmlNodePtr version = xmlNewNode(NULL, BAD_CAST "version");
-    xmlAddChild(version, xmlNewText(BAD_CAST DC2UDDF_VERSION));
-    xmlAddChild(generator, version);
-
     xmlNodePtr manufacturer = xmlNewNode(NULL, BAD_CAST "manufacturer");
+    xmlNewProp(manufacturer, BAD_CAST "id", "dc2uddf");
     xmlNodePtr manufacturerName = xmlNewNode(NULL, BAD_CAST "name");
     xmlAddChild(manufacturerName, xmlNewText(BAD_CAST DC2UDDF_AUTHOR));
     xmlAddChild(manufacturer, manufacturerName);
@@ -74,12 +86,15 @@ xmlNodePtr _createGeneratorBlock(xml_options_t *options) {
     xmlAddChild(email, xmlNewText(BAD_CAST DC2UDDF_EMAIL));
     xmlAddChild(contact, email);
     xmlAddChild(manufacturer, contact);
+    xmlAddChild(generator, manufacturer);
+
+    xmlNodePtr version = xmlNewNode(NULL, BAD_CAST "version");
+    xmlAddChild(version, xmlNewText(BAD_CAST DC2UDDF_VERSION));
+    xmlAddChild(generator, version);
 
     GDateTime *dt = g_date_time_new_now_utc();
     xmlAddChild(generator, _createDateTime(dt, options));
     g_date_time_unref(dt);
-
-    xmlAddChild(generator, manufacturer);
 
     return generator;
 }
@@ -102,6 +117,8 @@ xmlNodePtr _createWaypoint(dif_sample_t *sample, xml_options_t *options) {
         "OLF", "PO2", "airtime", "rgbm", "heading", "tissue level warning",
         "gaschange2", "ndl"};
 
+    GList *xmlSubsamples= NULL;
+
     xmlNodePtr xmlWaypoint = xmlNewNode(NULL, BAD_CAST "waypoint");
 
     gchar *nodeText = g_malloc(MAX_STRING_LENGTH);
@@ -110,7 +127,8 @@ xmlNodePtr _createWaypoint(dif_sample_t *sample, xml_options_t *options) {
 
     xmlNodePtr xmlDivetime = xmlNewNode(NULL, BAD_CAST "divetime");
     xmlAddChild(xmlDivetime, xmlNewText(BAD_CAST nodeText));
-    xmlAddChild(xmlWaypoint, xmlDivetime);
+    xmlSubsamples = g_list_append(xmlSubsamples, xmlDivetime);
+
 
     GList *subsample = g_list_first(sample->subsamples);
     while (subsample != NULL) {
@@ -123,19 +141,19 @@ xmlNodePtr _createWaypoint(dif_sample_t *sample, xml_options_t *options) {
             g_snprintf(nodeText, MAX_STRING_LENGTH, "%0.2f", ss->value.depth);
             xmlNodePtr xmlDepth = xmlNewNode(NULL, BAD_CAST "depth");
             xmlAddChild(xmlDepth, xmlNewText(BAD_CAST nodeText));
-            xmlAddChild(xmlWaypoint, xmlDepth);
+            xmlSubsamples = g_list_append(xmlSubsamples, xmlDepth);
             break;
         case DIF_SAMPLE_PRESSURE:
             g_snprintf(nodeText, MAX_STRING_LENGTH, "%0.2f", BAR_TO_PASCAL(ss->value.pressure.value));
             xmlNodePtr xmlTankpressure = xmlNewNode(NULL, BAD_CAST "tankpressure");
             xmlAddChild(xmlTankpressure, xmlNewText(BAD_CAST nodeText));
-            xmlAddChild(xmlWaypoint, xmlTankpressure);
+            xmlSubsamples = g_list_append(xmlSubsamples, xmlTankpressure);
             break;
         case DIF_SAMPLE_TEMPERATURE:
             g_snprintf(nodeText, MAX_STRING_LENGTH, "%0.2f", CELSIUS_TO_KELVIN(ss->value.temperature));
             xmlNodePtr xmlTemperature = xmlNewNode(NULL, BAD_CAST "temperature");
             xmlAddChild(xmlTemperature, xmlNewText(BAD_CAST nodeText));
-            xmlAddChild(xmlWaypoint, xmlTemperature);
+            xmlSubsamples = g_list_append(xmlSubsamples, xmlTemperature);
             break;
         case DIF_SAMPLE_EVENT:
         {
@@ -150,26 +168,26 @@ xmlNodePtr _createWaypoint(dif_sample_t *sample, xml_options_t *options) {
             g_snprintf(nodeText, MAX_STRING_LENGTH, "%u", ss->value.event.value);
             xmlNewProp(xmlEvent, BAD_CAST "value", BAD_CAST nodeText);
             xmlAddChild(xmlEvent, xmlNewText(BAD_CAST events[ss->value.event.type]));
-            xmlAddChild(xmlWaypoint, xmlEvent);
+            xmlSubsamples = g_list_append(xmlSubsamples, xmlEvent);
             break;
         }
         case DIF_SAMPLE_RBT:
             g_snprintf(nodeText, MAX_STRING_LENGTH, "%d", ss->value.rbt);
             xmlNodePtr xmlRemainingbottomtime = xmlNewNode(NULL, BAD_CAST "remainingbottomtime");
             xmlAddChild(xmlRemainingbottomtime, xmlNewText(BAD_CAST nodeText));
-            xmlAddChild(xmlWaypoint, xmlRemainingbottomtime);
+            xmlSubsamples = g_list_append(xmlSubsamples, xmlRemainingbottomtime);
             break;
         case DIF_SAMPLE_HEARTBEAT:
             g_snprintf(nodeText, MAX_STRING_LENGTH, "%d", ss->value.heartbeat);
             xmlNodePtr xmlHeartbeat = xmlNewNode(NULL, BAD_CAST "heartbeat");
             xmlAddChild(xmlHeartbeat, xmlNewText(BAD_CAST nodeText));
-            xmlAddChild(xmlWaypoint, xmlHeartbeat);
+            xmlSubsamples = g_list_append(xmlSubsamples, xmlHeartbeat);
             break;
         case DIF_SAMPLE_BEARING:
             g_snprintf(nodeText, MAX_STRING_LENGTH, "%d", ss->value.bearing);
             xmlNodePtr xmlHeading = xmlNewNode(NULL, BAD_CAST "heading");
             xmlAddChild(xmlHeading, xmlNewText(BAD_CAST nodeText));
-            xmlAddChild(xmlWaypoint, xmlHeading);
+            xmlSubsamples = g_list_append(xmlSubsamples, xmlHeading);
             break;
         case DIF_SAMPLE_VENDOR:
         {
@@ -187,7 +205,7 @@ xmlNodePtr _createWaypoint(dif_sample_t *sample, xml_options_t *options) {
                 g_snprintf((vendorText + i * 2), vendorTextLength - i * 2, "%02X", ((unsigned char *) ss->value.vendor.data)[i]);
             }
             xmlAddChild(xmlVendor, xmlNewText(BAD_CAST vendorText));
-            xmlAddChild(xmlWaypoint, xmlVendor);
+            xmlSubsamples = g_list_append(xmlSubsamples, xmlVendor);
             g_free(propText);
             g_free(vendorText);
             break;
@@ -202,7 +220,15 @@ xmlNodePtr _createWaypoint(dif_sample_t *sample, xml_options_t *options) {
         subsample = g_list_next(subsample);
     }
 
+    // sort the different subsamples and save them as children of the waypoint
+    xmlSubsamples = g_list_sort(xmlSubsamples, _g_list_sort_xmlNodePtrs);
+    xmlSubsamples = g_list_first(xmlSubsamples);
+    while (xmlSubsamples != NULL) {
+        xmlAddChild(xmlWaypoint, xmlSubsamples->data);
+        xmlSubsamples = g_list_next(xmlSubsamples);
+    }
     g_free(nodeText);
+    g_list_free(xmlSubsamples);
     return xmlWaypoint;
 }
 
@@ -223,30 +249,12 @@ xmlNodePtr _createDive(dif_dive_t *dive, gchar *diveid, xml_options_t *options) 
         xmlAddChild(xmlSurfaceIntervalBeforeDive, xmlInfinity);
     } else {
         xmlNodePtr xmlPassedTime = xmlNewNode(NULL, BAD_CAST "passedtime");
-        g_snprintf(tempStr, MAX_STRING_LENGTH, "%0.1f", (gdouble)dive->surfaceInterval);
+        g_snprintf(tempStr, MAX_STRING_LENGTH, "%d", dive->surfaceInterval);
         xmlAddChild(xmlPassedTime, xmlNewText(BAD_CAST tempStr));
         xmlAddChild(xmlSurfaceIntervalBeforeDive, xmlPassedTime);
     }
     xmlAddChild(xmlInformationBeforeDive, xmlSurfaceIntervalBeforeDive);
     xmlAddChild(xmlDive, xmlInformationBeforeDive);
-
-    /* if gasmixes are specified, then we'll link to them */
-    if (dive->gasmixes != NULL) {
-        guint ctr = 0;
-        GList *gasmixes = g_list_first(dive->gasmixes);
-        while (gasmixes != NULL) {
-            xmlNodePtr xmlTankdata = xmlNewNode(NULL, BAD_CAST "tankdata");
-            g_snprintf(tempStr, MAX_STRING_LENGTH, "%s_tank%d", diveid, ctr++);
-            xmlNewProp(xmlTankdata, BAD_CAST "id", BAD_CAST tempStr);
-            dif_gasmix_t *gasmix = gasmixes->data;
-            xmlNodePtr xmlLink = xmlNewNode(NULL, BAD_CAST "link");
-            xmlNewProp(xmlLink, BAD_CAST "ref", BAD_CAST dif_gasmix_name(gasmix));
-            xmlAddChild(xmlTankdata, xmlLink);
-            xmlAddChild(xmlDive, xmlTankdata);
-            gasmixes = g_list_next(gasmixes);
-        }
-    }
-    g_free(tempStr);
 
     /* iterate over all of the samples */
     xmlNodePtr xmlSamples = xmlNewNode(NULL, BAD_CAST "samples");
@@ -258,6 +266,94 @@ xmlNodePtr _createDive(dif_dive_t *dive, gchar *diveid, xml_options_t *options) 
         xmlAddChild(xmlSamples, xmlWaypoint);
         samples = g_list_next(samples);
     }
+
+
+    /* if gasmixes are specified, then we'll link to them */
+    if (dive->gasmixes != NULL) {
+        guint ctr = 0;
+        GList *gasmixes = g_list_first(dive->gasmixes);
+        while (gasmixes != NULL) {
+            xmlNodePtr xmlTankdata = xmlNewNode(NULL, BAD_CAST "tankdata");
+            // id is NOT a valid parameter for tankdata
+            // g_snprintf(tempStr, MAX_STRING_LENGTH, "%s_tank%d", diveid, ctr++);
+            // xmlNewProp(xmlTankdata, BAD_CAST "id", BAD_CAST tempStr);
+            dif_gasmix_t *gasmix = gasmixes->data;
+            xmlNodePtr xmlLink = xmlNewNode(NULL, BAD_CAST "link");
+            xmlNewProp(xmlLink, BAD_CAST "ref", BAD_CAST dif_gasmix_name(gasmix));
+            xmlAddChild(xmlTankdata, xmlLink);
+            xmlAddChild(xmlDive, xmlTankdata);
+
+            // FIXME: this gets the initial pressure of any tank and isn't bound
+            // to the specific tank. Need to see how this actually works in more
+            // detail and understand the numbering that libdivecomputer uses
+            // when creating tanks
+            gdouble initialPressure = dif_dive_get_initial_pressure(dive, -1);
+            if (initialPressure > GAS_EPSILON) {
+                g_snprintf(tempStr, MAX_STRING_LENGTH, "%0.1f", BAR_TO_PASCAL(initialPressure));
+                xmlNodePtr xmlTankPressureBegin = xmlNewNode(NULL, BAD_CAST "tankpressurebegin");
+                xmlAddChild(xmlTankPressureBegin, xmlNewText(BAD_CAST tempStr));
+                xmlAddChild(xmlTankdata, xmlTankPressureBegin);
+            }
+            gasmixes = g_list_next(gasmixes);
+        }
+    }
+
+    /* create the informationafterdive field */
+    xmlNodePtr xmlInformationAfterDive = xmlNewNode(NULL, BAD_CAST "informationafterdive");
+
+    /* create the lowest temperature field */
+    gdouble lowestTemperature = 9999;
+    samples = g_list_first(dive->samples);
+    while (samples != NULL){
+        dif_sample_t *sample = samples->data;
+        dif_subsample_t *subsample = dif_sample_get_subsample(sample, DIF_SAMPLE_TEMPERATURE);
+        if (subsample != NULL && subsample->value.temperature > 0.1 && subsample->value.temperature < lowestTemperature) {
+            lowestTemperature = subsample->value.temperature;
+        }
+        samples = g_list_next(samples);
+    }
+
+    if (lowestTemperature < 9998) {
+        xmlNodePtr xmlLowestTemperature = xmlNewNode(NULL, BAD_CAST "lowesttemperature");
+        g_snprintf(tempStr, MAX_STRING_LENGTH, "%0.1f", (double)lowestTemperature);
+        xmlAddChild(xmlLowestTemperature, xmlNewText(BAD_CAST tempStr));
+        xmlAddChild(xmlInformationAfterDive, xmlLowestTemperature);
+    }
+    xmlAddChild(xmlDive, xmlInformationAfterDive);
+
+    /* calculate the greatest depth */
+    xmlNodePtr xmlGreatestDepth = xmlNewNode(NULL, BAD_CAST "greatestdepth");
+    gdouble greatestDepth = 0.0;
+    samples = g_list_first(dive->samples);
+    while (samples != NULL) {
+        dif_sample_t *sample = samples->data;
+        dif_subsample_t *subsample = dif_sample_get_subsample(sample, DIF_SAMPLE_DEPTH);
+        if (subsample != NULL && subsample->value.depth > greatestDepth) {
+            greatestDepth = subsample->value.depth;
+        }
+        samples = g_list_next(samples);
+    }
+    g_snprintf(tempStr, MAX_STRING_LENGTH, "%0.1f", greatestDepth);
+    xmlAddChild(xmlGreatestDepth, xmlNewText(BAD_CAST tempStr));
+    xmlAddChild(xmlInformationAfterDive, xmlGreatestDepth);
+
+    /* create the dive duration field */
+    xmlNodePtr xmlDiveDuration = xmlNewNode(NULL, BAD_CAST "diveduration");
+    guint maxtimestamp = 0;
+    samples = g_list_first(dive->samples);
+    while (samples != NULL) {
+        dif_sample_t *sample = samples->data;
+        if (sample->timestamp > maxtimestamp) {
+            maxtimestamp = sample->timestamp;
+        }
+        samples = g_list_next(samples);
+    }
+    g_snprintf(tempStr, MAX_STRING_LENGTH, "%0.1f", (gdouble)maxtimestamp);
+    xmlAddChild(xmlDiveDuration, xmlNewText(BAD_CAST tempStr));
+    xmlAddChild(xmlInformationAfterDive, xmlDiveDuration);
+
+    g_free(tempStr);
+
     return xmlDive;
 }
 
