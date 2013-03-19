@@ -199,8 +199,8 @@ dc_to_dif_event(parser_sample_event_t ev) {
         return DIF_SAMPLE_EVENT_TISSUELEVEL;
     case SAMPLE_EVENT_GASCHANGE2:
         return DIF_SAMPLE_EVENT_GASCHANGE2;
-    case SAMPLE_EVENT_NDL:
-        return DIF_SAMPLE_EVENT_NDL;
+    // case SAMPLE_EVENT_NDL:
+    //    return DIF_SAMPLE_EVENT_NDL;
     }
     WARNING("Unknown libdivecomputer sample event");
     return SAMPLE_EVENT_UNKNOWN;

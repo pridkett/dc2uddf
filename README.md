@@ -53,6 +53,7 @@ I only have a single dive computer, the Uwatec Galileo Luna. In order to get eve
 
     sudo modprobe ircomm
     sudo modprobe irda_usb
+    sudo modprobe ircomm-tty
     sudo irattach irda0 -s
 
 Now you should be able to download the data from your computer using the following command:
@@ -64,6 +65,12 @@ The general format is:
     dc2uddf -b [backend name] -d [device name]
     
 You can get a list of the backend and device names by running `universal` in the examples directory of libdive computer. At some point in the future I'll update dc2uddf to list all of the possible devices. However, as I only have the Uwatec Galileo Smart, it is the only device that is tested.
+
+Additional Arguments
+====================
+
+* `-i`, `--ipf`: Initial pressure fix. When first connecting the Luna and some other devices the pressure will read 0. This goes back and sets the initial pressure to the first valid pressure reading.
+* `-t`, `--truncate`: Run an algorithm to truncate dives after surfacing. Basically, this stops a dive after you've surfaced if you don't go down below 1m again. This is handy because the Luna typically records an extra five minutes of data at the end of the dive.
 
 [license]: http://www.apache.org/licenses/LICENSE-2.0.html
 [libdc]: http://www.divesoftware.org/libdc/
