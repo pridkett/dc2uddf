@@ -21,8 +21,8 @@ License
 
 This software is licensed under the [Apache License, Version 2.0][license]
 
-Compilation Requirements
-========================
+Compilation Prerequisites
+=========================
 
 * [libdivecomputer][libdc] - the magical library that interfaces with nearly every dive computer
 * [glib][glib] - a utility library with many useful data structures and methods for C programming
@@ -45,6 +45,25 @@ For all platforms you'll probably need to download and install libdivecomputer o
     ./configure
     make
     sudo make install
+
+Compiling the Program
+=====================
+
+This step varies a little bit depending on how you got the software. If you obtained dc2uddf as a tarball release compliation is easy and straightforward:
+
+    ./configure
+    make
+    make install
+
+If you are running off the git version of the software then you'll need to run a few other commands first.
+
+    automake --add-missing
+    cp README.md README
+    autoreconf
+    ./configure
+    make
+    make install
+
 
 Running the Program
 ===================
