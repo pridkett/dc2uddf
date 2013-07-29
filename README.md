@@ -78,7 +78,7 @@ Next, open up `/etc/default/irda-utils` and search for the lines that describe `
 
 Then reboot and your IrDA setup should be running with no issues.
 
-Downloadings Some Data
+Downloading Some Data
 ----------------------
 
 As the only computer I have is a Uwatec Galileo Luna, it's the only one that I can describe the process for. Just run the following command and you'll get a file called `output.uddf` with all of the data from the computer.
