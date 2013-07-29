@@ -1,4 +1,4 @@
-CFLAGS=-Wall
+AM_CFLAGS=-Wall
 TESTS=check_dif
 bin_PROGRAMS=dc2uddf
 check_PROGRAMS=check_dif
