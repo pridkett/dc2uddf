@@ -116,6 +116,7 @@ Additional Arguments
 * `-i`, `--ipf`: Initial pressure fix. When first connecting the Luna and some other devices the pressure will read 0. This goes back and sets the initial pressure to the first valid pressure reading.
 * `-t`, `--truncate`: Run an algorithm to truncate dives after surfacing. Basically, this stops a dive after you've surfaced if you don't go down below 1m again. This is handy because the Luna typically records an extra five minutes of data at the end of the dive.
 * `-o`, `--output`: Specifies where to save the UDDF data to.
+* `--invalid`: tells dc2uddf to output &lt;vendor&gt; and &lt;event&gt; tags in violation of the uddf spec, but which are helpful for understanding what your dive computer is actually recording.
 
 My typical usage is to somthing like:
 

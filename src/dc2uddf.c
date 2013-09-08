@@ -3,7 +3,7 @@
  Name        : dc2uddf.c
  Author      : Patrick Wagstrom
  Version     :
- Copyright   : Copyright (c) 2012 Patrick Wagstrom
+ Copyright   : Copyright (c) 2012-2013 Patrick Wagstrom
                Based on code originally Copyright (C) 2009 Jef Driesen
  Description : A simple tool that utilizes libdivecomputer to download data
                from a dive computer and generate a UDDF file
@@ -35,6 +35,7 @@ typedef struct program_options_t {
     guchar initialPressureFix;
     guchar dumpDives;
     guchar dumpMemory;
+    guchar useInvalidElements;
 } program_options_t;
 
 typedef struct dive_data_t {
@@ -559,6 +560,7 @@ dowork(dc_context_t *context, dc_descriptor_t *descriptor, program_options_t *op
 
         xml_options_t *xmlOptions = dif_xml_options_alloc();
         xmlOptions->filename = options->xmlfile;
+        xmlOptions->useInvalidElements = options->useInvalidElements;
 
         if (options->truncateDives) {
             divedata.dc = dif_alg_dc_truncate_dives(divedata.dc);
@@ -714,14 +716,14 @@ void usage() {
     fprintf(stderr, "  -o,--output UDDFFILE: save UDDF to file called UDDFFILE\n");
     fprintf(stderr, "  -i,--ipf: calculate initial pressure fix\n");
     fprintf(stderr, "  -t,--truncate: truncate dives after surfacing\n");
+    fprintf(stderr, "  --invalid: add invalid <event> and <vendor> tags to assist debugging\n");
     fprintf(stderr, "  --listbackends: print all the backends\n");
     fprintf(stderr, "  --listdevices: print all the devices\n");
     fprintf(stderr, "  -h,--help: print this help screen\n");
     exit(EXIT_FAILURE);
 }
 
-void
-print_backends()
+void print_backends()
 {
     unsigned int i;
     fprintf(stderr, "Supported backends:\n\n");
@@ -763,6 +765,7 @@ main(int argc, char **argv)
     options.logfile = "output.log";
     options.dumpDives = 1;
     options.dumpMemory = 0;
+    options.useInvalidElements = 0;
 
     static struct option long_options[] = {
             {"backend",      required_argument, NULL, 'b'},
@@ -771,6 +774,7 @@ main(int argc, char **argv)
             {"help",         no_argument,       NULL, 'h'},
             {"ipf",          no_argument,       NULL, 'i'},
             {"truncate",     no_argument,       NULL, 't'},
+            {"invalid",      no_argument,       NULL, 0},
             {"listdevices",  no_argument,       NULL, 0},
             {"listbackends", no_argument,       NULL, 0},
             {NULL,           no_argument,       NULL, 0}
@@ -794,6 +798,9 @@ main(int argc, char **argv)
             }
             if (g_strcmp0("listbackends", long_options[option_index].name) == 0) {
                 print_backends();
+            }
+            if (g_strcmp0("invalid", long_options[option_index].name) == 0) {
+                options.useInvalidElements = 1;
             }
             break;
 
