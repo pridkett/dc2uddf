@@ -149,6 +149,7 @@ typedef struct dif_subsample_t {
  */
 typedef struct xml_options_t {
     gchar *filename;
+    gboolean useInvalidElements;
 } xml_options_t;
 
 /* dif.c */

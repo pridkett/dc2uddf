@@ -1,6 +1,6 @@
 dc2uddf
 =======
-Copyright (c) 2012 [Patrick Wagstrom][pwagstrom]
+Copyright (c) 2012-2013 [Patrick Wagstrom][pwagstrom]
 
 This is a simple tool that uses [libdivecomputer][libdc] to connect a dive computer
 and download all the dive information into a [UDDF][uddf] file. This information can

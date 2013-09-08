@@ -7,8 +7,8 @@
 #define DC2UDDF_VERSION "1.0"
 #define DC2UDDF_AUTHOR "Patrick Wagstrom"
 #define DC2UDDF_EMAIL "patrick@wagstrom.net"
-#define UDDF_VERSION "3.1.0"
-#define UDDF_NAMESPACE "http://www.streit.cc/uddf/3.1/"
+#define UDDF_VERSION "3.2.0"
+#define UDDF_NAMESPACE "http://www.streit.cc/uddf/3.2/"
 
 #define MAX_STRING_LENGTH 100
 #define BAR_TO_PASCAL(a) (a*100000)
@@ -156,21 +156,28 @@ xmlNodePtr _createWaypoint(dif_sample_t *sample, xml_options_t *options) {
             xmlSubsamples = g_list_append(xmlSubsamples, xmlTemperature);
             break;
         case DIF_SAMPLE_EVENT:
-        {
-            // WARNING: the event tag is NOT part of UDDF
-            xmlNodePtr xmlEvent = xmlNewNode(NULL, BAD_CAST "event");
-            g_snprintf(nodeText, MAX_STRING_LENGTH, "%u", ss->value.event.type);
-            xmlNewProp(xmlEvent, BAD_CAST "type", BAD_CAST nodeText);
-            g_snprintf(nodeText, MAX_STRING_LENGTH, "%u", ss->value.event.time);
-            xmlNewProp(xmlEvent, BAD_CAST "time", BAD_CAST nodeText);
-            g_snprintf(nodeText, MAX_STRING_LENGTH, "%u", ss->value.event.flags);
-            xmlNewProp(xmlEvent, BAD_CAST "flags", BAD_CAST nodeText);
-            g_snprintf(nodeText, MAX_STRING_LENGTH, "%u", ss->value.event.value);
-            xmlNewProp(xmlEvent, BAD_CAST "value", BAD_CAST nodeText);
-            xmlAddChild(xmlEvent, xmlNewText(BAD_CAST events[ss->value.event.type]));
-            xmlSubsamples = g_list_append(xmlSubsamples, xmlEvent);
+            if (options->useInvalidElements) {
+                // WARNING: the event tag is NOT part of UDDF, however there are cases when
+                // it might be desirable to save these events for debugging and validation.
+                //
+                // This is partially because there are various events in the UDDF schema
+                // that don't easily map, so I haven't implemented them yet. This will at
+                // at least tell you if the event happened.
+                xmlNodePtr xmlEvent = xmlNewNode(NULL, BAD_CAST "event");
+                g_snprintf(nodeText, MAX_STRING_LENGTH, "%u", ss->value.event.type);
+                xmlNewProp(xmlEvent, BAD_CAST "type", BAD_CAST nodeText);
+                g_snprintf(nodeText, MAX_STRING_LENGTH, "%u", ss->value.event.time);
+                xmlNewProp(xmlEvent, BAD_CAST "time", BAD_CAST nodeText);
+                g_snprintf(nodeText, MAX_STRING_LENGTH, "%u", ss->value.event.flags);
+                xmlNewProp(xmlEvent, BAD_CAST "flags", BAD_CAST nodeText);
+                g_snprintf(nodeText, MAX_STRING_LENGTH, "%u", ss->value.event.value);
+                xmlNewProp(xmlEvent, BAD_CAST "value", BAD_CAST nodeText);
+                xmlAddChild(xmlEvent, xmlNewText(BAD_CAST events[ss->value.event.type]));
+                xmlSubsamples = g_list_append(xmlSubsamples, xmlEvent);
+            } else {
+                printf("** Received an EVENT that isn't part of the schema. To dump this event please set xml_options_t->useInvalidElements to TRUE\n");
+            }
             break;
-        }
         case DIF_SAMPLE_RBT:
             g_snprintf(nodeText, MAX_STRING_LENGTH, "%d", ss->value.rbt);
             xmlNodePtr xmlRemainingbottomtime = xmlNewNode(NULL, BAD_CAST "remainingbottomtime");
@@ -190,26 +197,31 @@ xmlNodePtr _createWaypoint(dif_sample_t *sample, xml_options_t *options) {
             xmlSubsamples = g_list_append(xmlSubsamples, xmlHeading);
             break;
         case DIF_SAMPLE_VENDOR:
-        {
-            // WARNING: the vendor tag is NOT part of UDDF
-            xmlNodePtr xmlVendor = xmlNewNode(NULL, BAD_CAST "vendor");
-            gchar *propText = g_malloc(MAX_STRING_LENGTH);
-            g_snprintf(propText, MAX_STRING_LENGTH, "%u", ss->value.vendor.type);
-            xmlNewProp(xmlVendor, BAD_CAST "type", BAD_CAST propText);
-            g_snprintf(propText, MAX_STRING_LENGTH, "%u", ss->value.vendor.size);
-            xmlNewProp(xmlVendor, BAD_CAST "size", BAD_CAST propText);
-            guint vendorTextLength = ss->value.vendor.size*2+1;
-            gchar *vendorText = g_malloc0(ss->value.vendor.size*2+1);
-            unsigned int i;
-            for (i=0; i < ss->value.vendor.size; i++) {
-                g_snprintf((vendorText + i * 2), vendorTextLength - i * 2, "%02X", ((unsigned char *) ss->value.vendor.data)[i]);
+            if (options->useInvalidElements) {
+                // WARNING: similar to the event tag, the vendor tag is not a
+                // part of UDDF but can be recorded by dc2uddf.  I haven't had
+                // any of these tags fire of on my computer, so I'm not certain
+                // when they come up or what they mean.
+                xmlNodePtr xmlVendor = xmlNewNode(NULL, BAD_CAST "vendor");
+                gchar *propText = g_malloc(MAX_STRING_LENGTH);
+                g_snprintf(propText, MAX_STRING_LENGTH, "%u", ss->value.vendor.type);
+                xmlNewProp(xmlVendor, BAD_CAST "type", BAD_CAST propText);
+                g_snprintf(propText, MAX_STRING_LENGTH, "%u", ss->value.vendor.size);
+                xmlNewProp(xmlVendor, BAD_CAST "size", BAD_CAST propText);
+                guint vendorTextLength = ss->value.vendor.size*2+1;
+                gchar *vendorText = g_malloc0(ss->value.vendor.size*2+1);
+                unsigned int i;
+                for (i=0; i < ss->value.vendor.size; i++) {
+                    g_snprintf((vendorText + i * 2), vendorTextLength - i * 2, "%02X", ((unsigned char *) ss->value.vendor.data)[i]);
+                }
+                xmlAddChild(xmlVendor, xmlNewText(BAD_CAST vendorText));
+                xmlSubsamples = g_list_append(xmlSubsamples, xmlVendor);
+                g_free(propText);
+                g_free(vendorText);
+            } else {
+                printf("** Received a VENDOR event that I don't understand and isn't part of the schema. To dump this event please set xml_options_t->useInvalidElements to TRUE\n");
             }
-            xmlAddChild(xmlVendor, xmlNewText(BAD_CAST vendorText));
-            xmlSubsamples = g_list_append(xmlSubsamples, xmlVendor);
-            g_free(propText);
-            g_free(vendorText);
             break;
-        }
         case DIF_SAMPLE_UNDEFINED:
             printf("** Unable to process DIF_SAMPLE_UNKNOWN\n");
             break;
@@ -491,9 +503,15 @@ xmlNodePtr _createGasDefinitions(dif_dive_collection_t *dc, xml_options_t *optio
     return xmlGasDefinitions;
 }
 
+/**
+ * allocates space for the XML serialization options
+ *
+ * by default this is set with filename=NULL and useInvalidElements=FALSE
+ */
 xml_options_t *dif_xml_options_alloc() {
     xml_options_t *options = g_malloc(sizeof(xml_options_t));
     options->filename = NULL;
+    options->useInvalidElements = FALSE;
     return options;
 }
 
@@ -505,6 +523,16 @@ void dif_xml_options_free(xml_options_t *options) {
     g_free(options);
 }
 
+/**
+ * simple helper function for saving a collection of dives
+ *
+ * for the most part this is a pass through function to dif_save_dive_collection_uddf_options
+ * However, it will create an xml_options_t with the filename and then set the filename.
+ * After completion it will free the xml_options_t
+ *
+ * @param dc: the collection of dives
+ * @param filename: the file to save the data to
+ */
 void dif_save_dive_collection_uddf(dif_dive_collection_t *dc, gchar* filename) {
     xml_options_t *options = dif_xml_options_alloc();
     options->filename = filename;
@@ -512,6 +540,12 @@ void dif_save_dive_collection_uddf(dif_dive_collection_t *dc, gchar* filename) {
     dif_xml_options_free(options);
 }
 
+/**
+ * saves a collection of dives to a file
+ *
+ * @param dc: collection of dives to save
+ * @param options: the set of serialization options
+ */
 void dif_save_dive_collection_uddf_options(dif_dive_collection_t *dc, xml_options_t *options) {
     xmlDocPtr doc = NULL;
     xmlNodePtr root_node = NULL;
