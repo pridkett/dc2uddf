@@ -29,9 +29,9 @@ Compilation Prerequisites
 * [libxml][libxml] - XML serialization and deserialization library
 * [check][check] - unit testing for C programs
 
-On a Mac all of these except libdivecomputer can be installed using [homebrew][homebrew] with the following command:
+On a Mac all of these can be installed using [homebrew][homebrew] with the following command:
 
-    brew install check libxml2 glib
+    brew install check libxml2 glib libdivecomputer
 
 On Ubuntu you can install all of these except libdivecomputer with the following command:
 
