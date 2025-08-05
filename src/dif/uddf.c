@@ -7,8 +7,9 @@
 #define DC2UDDF_VERSION "1.0"
 #define DC2UDDF_AUTHOR "Patrick Wagstrom"
 #define DC2UDDF_EMAIL "patrick@wagstrom.net"
-#define UDDF_VERSION "3.2.0"
+#define UDDF_VERSION "3.2.3"
 #define UDDF_NAMESPACE "http://www.streit.cc/uddf/3.2/"
+#define UDDF_SCHEMA_LOCATION "http://www.streit.cc/uddf/3.2/ http://www.streit.cc/resources/UDDF/v3.2.3/schema/uddf_3.2.3.xsd"
 
 #define MAX_STRING_LENGTH 100
 #define BAR_TO_PASCAL(a) (a*100000)
@@ -186,9 +187,9 @@ xmlNodePtr _createWaypoint(dif_sample_t *sample, xml_options_t *options) {
             break;
         case DIF_SAMPLE_HEARTBEAT:
             g_snprintf(nodeText, MAX_STRING_LENGTH, "%d", ss->value.heartbeat);
-            xmlNodePtr xmlHeartbeat = xmlNewNode(NULL, BAD_CAST "heartbeat");
-            xmlAddChild(xmlHeartbeat, xmlNewText(BAD_CAST nodeText));
-            xmlSubsamples = g_list_append(xmlSubsamples, xmlHeartbeat);
+            xmlNodePtr xmlHeartrate = xmlNewNode(NULL, BAD_CAST "heartrate");
+            xmlAddChild(xmlHeartrate, xmlNewText(BAD_CAST nodeText));
+            xmlSubsamples = g_list_append(xmlSubsamples, xmlHeartrate);
             break;
         case DIF_SAMPLE_BEARING:
             g_snprintf(nodeText, MAX_STRING_LENGTH, "%d", ss->value.bearing);
@@ -553,6 +554,8 @@ void dif_save_dive_collection_uddf_options(dif_dive_collection_t *dc, xml_option
     doc = xmlNewDoc(BAD_CAST "1.0");
     root_node = xmlNewNode(NULL, BAD_CAST "uddf");
     xmlNsPtr nsptr = xmlNewNs(root_node, UDDF_NAMESPACE, NULL);
+    xmlNsPtr xsiNs = xmlNewNs(root_node, BAD_CAST "http://www.w3.org/2001/XMLSchema-instance", BAD_CAST "xsi");
+    xmlNewNsProp(root_node, xsiNs, BAD_CAST "schemaLocation", BAD_CAST UDDF_SCHEMA_LOCATION);
     xmlNewProp(root_node, BAD_CAST "version", BAD_CAST UDDF_VERSION);
     xmlDocSetRootElement(doc, root_node);
     xmlAddChild(root_node, _createGeneratorBlock(options));
