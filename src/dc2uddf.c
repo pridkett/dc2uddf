@@ -19,6 +19,12 @@
 #include <libdivecomputer/common.h>
 #include <libdivecomputer/parser.h>
 #include <libdivecomputer/device.h>
+#include <libdivecomputer/descriptor.h>
+#include <libdivecomputer/iostream.h>
+#include <libdivecomputer/serial.h>
+#include <libdivecomputer/irda.h>
+#include <libdivecomputer/usbhid.h>
+#include <libdivecomputer/bluetooth.h>
 
 #include "utils.h"
 #include "dif/dif.h"
@@ -204,11 +210,11 @@ dc_to_dif_event(parser_sample_event_t ev) {
     //    return DIF_SAMPLE_EVENT_NDL;
     }
     WARNING("Unknown libdivecomputer sample event");
-    return SAMPLE_EVENT_UNKNOWN;
+    return DIF_SAMPLE_EVENT_UNKNOWN;
 }
 
 void
-sample_cb (dc_sample_type_t type, dc_sample_value_t value, void *userdata) {
+sample_cb (dc_sample_type_t type, const dc_sample_value_t *value, void *userdata) {
     sample_cb_data_t *udata = (sample_cb_data_t *) userdata;
     dif_dive_t *dive = udata->dive;
     dif_subsample_t *subsample = NULL;
@@ -219,61 +225,61 @@ sample_cb (dc_sample_type_t type, dc_sample_value_t value, void *userdata) {
         sample = dif_sample_alloc();
         udata->sample = sample;
         dive = dif_dive_add_sample(dive, sample);
-        sample->timestamp = value.time;
+        sample->timestamp = value->time;
         break;
     case DC_SAMPLE_DEPTH:
         subsample = dif_subsample_alloc();
         subsample->type = DIF_SAMPLE_DEPTH;
-        subsample->value.depth = value.depth;
+        subsample->value.depth = value->depth;
         sample = dif_sample_add_subsample(sample, subsample);
         break;
     case DC_SAMPLE_PRESSURE:
         subsample = dif_subsample_alloc();
         subsample->type = DIF_SAMPLE_PRESSURE;
-        subsample->value.pressure.tank = value.pressure.tank;
-        subsample->value.pressure.value = value.pressure.value;
+        subsample->value.pressure.tank = value->pressure.tank;
+        subsample->value.pressure.value = value->pressure.value;
         sample = dif_sample_add_subsample(sample, subsample);
         break;
     case DC_SAMPLE_TEMPERATURE:
         subsample = dif_subsample_alloc();
         subsample->type = DIF_SAMPLE_TEMPERATURE;
-        subsample->value.temperature = value.temperature;
+        subsample->value.temperature = value->temperature;
         sample = dif_sample_add_subsample(sample, subsample);
         break;
     case DC_SAMPLE_EVENT:
         subsample = dif_subsample_alloc();
         subsample->type = DIF_SAMPLE_EVENT;
-        subsample->value.event.type = dc_to_dif_event(value.event.type);
-        subsample->value.event.time = value.event.time;
-        subsample->value.event.flags = value.event.flags;
-        subsample->value.event.value = value.event.value;
+        subsample->value.event.type = dc_to_dif_event(value->event.type);
+        subsample->value.event.time = value->event.time;
+        subsample->value.event.flags = value->event.flags;
+        subsample->value.event.value = value->event.value;
         sample = dif_sample_add_subsample(sample, subsample);
         break;
     case DC_SAMPLE_RBT:
         subsample = dif_subsample_alloc();
         subsample->type = DIF_SAMPLE_RBT;
         // TODO: my computer reports RBT in minutes, so we multiply here
-        subsample->value.rbt = value.rbt*60;
+        subsample->value.rbt = value->rbt*60;
         sample = dif_sample_add_subsample(sample, subsample);
         break;
     case DC_SAMPLE_HEARTBEAT:
         subsample = dif_subsample_alloc();
         subsample->type = DIF_SAMPLE_HEARTBEAT;
-        subsample->value.heartbeat = value.heartbeat;
+        subsample->value.heartbeat = value->heartbeat;
         sample = dif_sample_add_subsample(sample, subsample);
         break;
     case DC_SAMPLE_BEARING:
         subsample = dif_subsample_alloc();
         subsample->type = DIF_SAMPLE_BEARING;
-        subsample->value.bearing = value.bearing;
+        subsample->value.bearing = value->bearing;
         sample = dif_sample_add_subsample(sample, subsample);
         break;
     case DC_SAMPLE_VENDOR:
         subsample = dif_subsample_alloc();
         subsample->type = DIF_SAMPLE_VENDOR;
-        subsample->value.vendor.type = value.vendor.type;
-        subsample->value.vendor.size = value.vendor.size;
-        subsample->value.vendor.data = value.vendor.data;
+        subsample->value.vendor.type = value->vendor.type;
+        subsample->value.vendor.size = value->vendor.size;
+        subsample->value.vendor.data = value->vendor.data;
         sample = dif_sample_add_subsample(sample, subsample);
         break;
     default:
@@ -299,18 +305,9 @@ doparse(dif_dive_collection_t *dc, dc_device_t *device, const unsigned char data
     /* create the parser */
     message("Creating the parser.\n");
     dc_parser_t *parser = NULL;
-    dc_status_t rc = dc_parser_new(&parser, device);
+    dc_status_t rc = dc_parser_new(&parser, device, data, size);
     if (rc != DC_STATUS_SUCCESS) {
         WARNING("Error creating the parser.");
-        return rc;
-    }
-
-    /* register the data with the parser */
-    message("Registering the data.\n");
-    rc = dc_parser_set_data(parser, data, size);
-    if (rc != DC_STATUS_SUCCESS) {
-        WARNING("Error registering the data.");
-        dc_parser_destroy(parser);
         return rc;
     }
 
@@ -497,9 +494,41 @@ dowork(dc_context_t *context, dc_descriptor_t *descriptor, program_options_t *op
             dc_descriptor_get_product(descriptor),
             options->devname ? options->devname : "null");
     dc_device_t *device = NULL;
-    rc = dc_device_open(&device, context, descriptor, options->devname);
+    /* Determine the transport type */
+    dc_transport_t transports = dc_descriptor_get_transports(descriptor);
+    dc_iostream_t *iostream = NULL;
+    
+    if (transports & DC_TRANSPORT_SERIAL) {
+        rc = dc_serial_open(&iostream, context, options->devname);
+    } else if (transports & DC_TRANSPORT_IRDA) {
+        /* For IrDA, we need to parse the address from the device name */
+        unsigned int address = 0;
+        if (options->devname) {
+            address = strtoul(options->devname, NULL, 0);
+        }
+        rc = dc_irda_open(&iostream, context, address, 1);
+    } else if (transports & DC_TRANSPORT_USBHID) {
+        /* For USB HID, we would need to enumerate devices first */
+        WARNING("USB HID transport not yet implemented.");
+        return DC_STATUS_UNSUPPORTED;
+    } else if (transports & DC_TRANSPORT_BLUETOOTH) {
+        /* For Bluetooth, we would need to parse the address */
+        WARNING("Bluetooth transport not yet implemented.");
+        return DC_STATUS_UNSUPPORTED;
+    } else {
+        WARNING("No supported transport found.");
+        return DC_STATUS_UNSUPPORTED;
+    }
+    
+    if (rc != DC_STATUS_SUCCESS) {
+        WARNING("Error opening the I/O stream.");
+        return rc;
+    }
+    
+    rc = dc_device_open(&device, context, descriptor, iostream);
     if (rc != DC_STATUS_SUCCESS) {
         WARNING("Error opening device.");
+        dc_iostream_close(iostream);
         return rc;
     }
 
@@ -510,6 +539,7 @@ dowork(dc_context_t *context, dc_descriptor_t *descriptor, program_options_t *op
     if (rc != DC_STATUS_SUCCESS) {
         WARNING("Error registering the event handler.");
         dc_device_close(device);
+        dc_iostream_close(iostream);
         return rc;
     }
 
@@ -519,6 +549,7 @@ dowork(dc_context_t *context, dc_descriptor_t *descriptor, program_options_t *op
     if (rc != DC_STATUS_SUCCESS) {
         WARNING("Error registering the cancellation handler.");
         dc_device_close(device);
+        dc_iostream_close(iostream);
         return rc;
     }
 
@@ -529,6 +560,7 @@ dowork(dc_context_t *context, dc_descriptor_t *descriptor, program_options_t *op
         if (rc != DC_STATUS_SUCCESS) {
             WARNING("Error registerting the fingerprint data");
             dc_device_close(device);
+            dc_iostream_close(iostream);
             return rc;
         }
     }
@@ -555,6 +587,7 @@ dowork(dc_context_t *context, dc_descriptor_t *descriptor, program_options_t *op
             WARNING("Error downloading the dives.");
             dc_buffer_free(divedata.fingerprint);
             dc_device_close (device);
+            dc_iostream_close(iostream);
             return rc;
         }
 
@@ -582,8 +615,12 @@ dowork(dc_context_t *context, dc_descriptor_t *descriptor, program_options_t *op
     rc = dc_device_close(device);
     if (rc != DC_STATUS_SUCCESS) {
         WARNING("Error closing the device.");
+        dc_iostream_close(iostream);
         return rc;
     }
+
+    /* close the I/O stream */
+    dc_iostream_close(iostream);
 
     return DC_STATUS_SUCCESS;
 }
