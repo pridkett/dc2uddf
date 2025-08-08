@@ -267,21 +267,9 @@ xmlNodePtr _createDive(dif_dive_t *dive, gchar *diveid, xml_options_t *options) 
         xmlAddChild(xmlSurfaceIntervalBeforeDive, xmlPassedTime);
     }
     xmlAddChild(xmlInformationBeforeDive, xmlSurfaceIntervalBeforeDive);
-    xmlAddChild(xmlDive, xmlInformationBeforeDive);
-
-    /* iterate over all of the samples */
-    xmlNodePtr xmlSamples = xmlNewNode(NULL, BAD_CAST "samples");
-    xmlAddChild(xmlDive, xmlSamples);
-    dive = dif_dive_sort_samples(dive);
-    GList *samples = g_list_first(dive->samples);
-    while (samples != NULL) {
-        xmlNodePtr xmlWaypoint = _createWaypoint(samples->data, options);
-        xmlAddChild(xmlSamples, xmlWaypoint);
-        samples = g_list_next(samples);
-    }
-
-
+    
     /* if gasmixes are specified, then we'll link to them */
+    /* tankdata must be inside informationbeforedive according to UDDF 3.2.3 */
     if (dive->gasmixes != NULL) {
         guint ctr = 0;
         GList *gasmixes = g_list_first(dive->gasmixes);
@@ -294,7 +282,7 @@ xmlNodePtr _createDive(dif_dive_t *dive, gchar *diveid, xml_options_t *options) 
             xmlNodePtr xmlLink = xmlNewNode(NULL, BAD_CAST "link");
             xmlNewProp(xmlLink, BAD_CAST "ref", BAD_CAST dif_gasmix_name(gasmix));
             xmlAddChild(xmlTankdata, xmlLink);
-            xmlAddChild(xmlDive, xmlTankdata);
+            xmlAddChild(xmlInformationBeforeDive, xmlTankdata);
 
             // FIXME: this gets the initial pressure of any tank and isn't bound
             // to the specific tank. Need to see how this actually works in more
@@ -309,6 +297,19 @@ xmlNodePtr _createDive(dif_dive_t *dive, gchar *diveid, xml_options_t *options) 
             }
             gasmixes = g_list_next(gasmixes);
         }
+    }
+    
+    xmlAddChild(xmlDive, xmlInformationBeforeDive);
+
+    /* iterate over all of the samples */
+    xmlNodePtr xmlSamples = xmlNewNode(NULL, BAD_CAST "samples");
+    xmlAddChild(xmlDive, xmlSamples);
+    dive = dif_dive_sort_samples(dive);
+    GList *samples = g_list_first(dive->samples);
+    while (samples != NULL) {
+        xmlNodePtr xmlWaypoint = _createWaypoint(samples->data, options);
+        xmlAddChild(xmlSamples, xmlWaypoint);
+        samples = g_list_next(samples);
     }
 
     /* create the informationafterdive field */
@@ -378,7 +379,7 @@ xmlNodePtr _createRepetitionGroup(GList *dives, gchar *groupid, xml_options_t *o
     gchar *diveid = g_malloc(MAX_STRING_LENGTH);
     dives = g_list_first(dives);
     while (dives != NULL) {
-        g_snprintf(diveid, MAX_STRING_LENGTH, "dive%d", ctr++);
+        g_snprintf(diveid, MAX_STRING_LENGTH, "%s_dive%d", groupid, ctr++);
         xmlAddChild(repetitionGroup, _createDive(dives->data, diveid, options));
         dives = g_list_next(dives);
     }
