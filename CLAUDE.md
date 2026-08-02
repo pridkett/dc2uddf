@@ -21,6 +21,9 @@ Diving Log, etc.).
   `<dive>` between `informationbeforedive` and `samples`.
 - `src/dif/algos.c` — post-processing fixups (initial pressure fix, truncate
   after surfacing).
+- `src/dumpfile.c` / `dumpfile.h` — splits on-disk dive-data dumps into
+  individual records (Uwatec Smart framing). glib-only, no libdivecomputer
+  dependency, so it's unit-testable in `check_dif`.
 - `src/tests/check_dif.c` — Check-framework tests; write `test_simple.uddf`
   and `test.uddf`, which `make check` validates against the schema with
   xmllint.
@@ -72,18 +75,41 @@ make clean
 
 ## Running
 
+Live download (IrDA devices typically need a Linux VM; `-d` is the IrDA
+address / serial device):
+
 ```bash
-./src/dc2uddf -b smart -d "Uwatec Galileo" -o dives.uddf
+./src/dc2uddf -b smart -d 0x12345678 --save-dump dump.bin -o dives.uddf
 ```
 
-Options: `-i` (initial pressure fix), `-t` (truncate after surfacing),
-`-l N` (limit to N dives), `-s YYYY-MM-DD` (only dives since date),
-`--invalid` (emit non-schema `<event>`/`<vendor>` debug elements — output
-will NOT validate).
+Offline replay from a dump — fast iteration, no device needed. In this
+mode `-d` selects the device *descriptor by product name*; give the exact
+product because the Uwatec sample decoding is model-specific (a wrong
+model yields "Invalid type bits" errors):
 
-There is **no** working memory-dump (`-m`) input mode; `dumpMemory` is
-hardcoded off in `dc2uddf.c`. Downloading requires the actual device (IrDA
-devices typically need a Linux VM).
+```bash
+./src/dc2uddf -b smart -d "Uwatec Galileo Sol" --from-dump dump.bin -o dives.uddf
+```
+
+Dump options:
+- `--from-dump FILE` — parse dives from a saved dive-data dump. The format
+  is back-to-back Uwatec Smart records (`A5 A5 5A 5A` + LE32 length incl.
+  header), the same bytes `dctool download` transfers; splitter lives in
+  `src/dumpfile.c`. Composes with `-l`, `-s`, `-i`, `-t`.
+- `--save-dump FILE` — during a live download, also save the raw dive
+  records to FILE (replayable with `--from-dump`; flushed per record so an
+  interrupted session keeps a valid prefix).
+- `--dump-memory FILE` — save a full device memory image via
+  `dc_device_dump()`. Different layout; NOT replayable with `--from-dump`.
+
+Caveat: replayed datetimes use `dc_parser_new2` (no device), which skips
+the live clock-drift correction from `DC_EVENT_CLOCK` — timestamps may
+differ from a live download by the device's clock offset.
+
+Other options: `-i` (initial pressure fix), `-t` (truncate after
+surfacing), `-l N` (limit to N dives), `-s YYYY-MM-DD` (only dives since
+date), `--invalid` (emit non-schema `<event>`/`<vendor>` debug elements —
+output will NOT validate).
 
 Validate any generated file manually with:
 
