@@ -23,3 +23,5 @@ llm/
 memory_dump_results.txt
 test-driver
 *.trs
+*.bin
+vm_bash_history
