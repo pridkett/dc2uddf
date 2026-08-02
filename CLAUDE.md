@@ -76,7 +76,9 @@ make clean
 ## Running
 
 Live download (IrDA devices typically need a Linux VM; `-d` is the IrDA
-address / serial device):
+address from `/proc/net/irda/discovery` or the serial device path — see
+README.md for IrDA adapter chipsets, VM USB passthrough pitfalls, and
+link debugging):
 
 ```bash
 ./src/dc2uddf -b smart -d 0x12345678 --save-dump dump.bin -o dives.uddf

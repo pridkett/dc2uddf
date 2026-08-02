@@ -63,17 +63,75 @@ Running the Program
 
 I only have a single dive computer, the Uwatec Galileo Luna. There are two ways that I can get everything up and running on my Linux Virtual Machine - either by hand when I boot the machine, or by changing some settings so IrDA starts at boot. I'll describe both here:
 
+USB IrDA Adapters
+-----------------
+
+The authentic ScubaPro IrDA adapter is based on the MosChip **MCS7780**
+chipset (USB id `9710:7780`), driven by the `mcs7780` kernel module. Other
+chipsets should also work as long as Linux has a driver for them — for
+example, the **KS-959** adapter works once you bring in the `ks959_sir`
+driver. Check `lsusb` for your adapter's USB id and load the matching
+module; the generic `irda_usb` driver does *not* cover either of these.
+
+A few hard-won lessons about USB passthrough into a virtual machine:
+
+* Plug the adapter **directly into your PC** — not through a USB hub or
+  multi-port USB-C adapter.
+* Configure the VM with a **USB 2.0 (EHCI) controller**. USB 3.0 (xHCI)
+  won't work — these are full-speed USB 1.1 devices, and behind an xHCI
+  controller the driver's init transfers fail with USB protocol errors.
+* Even with all of that right, things are dicey. If the adapter doesn't
+  initialize, unload/reload the module and replug before assuming the
+  worst.
+
 Starting IrDA by Hand
 ---------------------
 
-This is a fine way to handle things if you're testing the software. First, make sure to plug in your USB&rarr;IR dongle and then run the following commands to setup the IrDA subsystem:
+This is a fine way to handle things if you're testing the software. First, make sure to plug in your USB&rarr;IR dongle and then run the following commands to setup the IrDA subsystem (substitute `ks959_sir` or your adapter's driver for `mcs7780` as appropriate):
 
     sudo modprobe ircomm
-    sudo modprobe irda_usb
     sudo modprobe ircomm-tty
+    sudo modprobe mcs7780
     sudo irattach irda0 -s
 
-That should be all that you need to do.
+Note that the driver module must be loaded **before** running `irattach` —
+if `irattach` runs first it exits immediately and nothing works.
+
+Then put the dive computer in IR sync mode, hold it close to the adapter
+(IR windows facing, ~10-20 cm), and confirm discovery sees it:
+
+    watch -n1 cat /proc/net/irda/discovery
+
+The dive computer should appear within a few seconds with a `daddr:` field.
+That 32-bit hex address is what you pass to `-d`.
+
+Debugging the IrDA Link
+-----------------------
+
+When the connection doesn't work, check things in this order:
+
+1. **Is the adapter visible in the VM?** `lsusb` should show it (MCS7780 is
+   `9710:7780`). If not, fix the hypervisor USB passthrough first.
+2. **Did the driver bind?** `dmesg | grep -iE "mcs|ks959|irda"` should show
+   the driver registering and `ip link show irda0` should exist.
+3. **Is irattach actually running?** `ps aux | grep irattach` — it exits
+   silently on failure. Its log lines go to `/var/log/syslog`; look for
+   `ioctl(SIOCSIFFLAGS): Protocol error`, which means the driver could not
+   initialize the adapter over USB (almost always the USB 3.0 / hub problem
+   described above). The `modprobe irda0 ... FATAL` line in syslog is
+   harmless noise.
+4. **Is the interface up?** `ip link show irda0` should NOT say
+   `state DOWN`/`qdisc noop`. You can do irattach's job manually to isolate
+   failures: `sudo ip link set irda0 up` (an error here = driver/USB
+   problem) then `echo 1 | sudo tee /proc/sys/net/irda/discovery`.
+5. **Is discovery seeing the dive computer?** `cat /proc/net/irda/discovery`
+   while the computer is in IR mode. Empty log = physical problem (range,
+   alignment, device not in sync mode) — `sudo irdadump` shows the raw
+   IR frames if you need to tell "no beacons sent" apart from "no reply".
+6. **dc2uddf errors decoded:** `Network is unreachable (101)` from
+   `dc_socket_connect` means the IrDA interface is down; `No route to host
+   (113)` means the stack is up but the address you gave `-d` was not
+   discovered.
 
 Starting IrDA at Boot
 ---------------------
@@ -93,15 +151,15 @@ Then reboot and your IrDA setup should be running with no issues.
 Downloading Some Data
 ----------------------
 
-As the only computer I have is a Uwatec Galileo Luna, it's the only one that I can describe the process for. Just run the following command and you'll get a file called `output.uddf` with all of the data from the computer.
+As the only computer I have is a Uwatec Galileo Luna, it's the only one that I can describe the process for. For IrDA devices, `-d` takes the 32-bit device address reported in `/proc/net/irda/discovery` (see above); for serial devices it takes the serial port path.
 
-    dc2uddf -b smart -d "Uwatec Galileo"
+    dc2uddf -b smart -d 0x5b31b527
 
 The general format is:
 
-    dc2uddf -b [backend name] -d [device name]
+    dc2uddf -b [backend name] -d [device address]
 
-You can get a list of the backend and device names with `dc2uddf --listbackends` and `dc2uddf --listdevices`. However, as I only have the Uwatec Galileo, it is the only device that is tested.
+You can get a list of the backend and device names with `dc2uddf --listbackends` and `dc2uddf --listdevices`. However, as I only have the Uwatec Galileo, it is the only device that is tested. (Older versions of dc2uddf accepted a product name like `"Uwatec Galileo"` for `-d` because the old libdivecomputer did its own IrDA discovery; with libdivecomputer 0.9 the numeric address is required for live downloads.)
 
 Working With Dump Files
 -----------------------
