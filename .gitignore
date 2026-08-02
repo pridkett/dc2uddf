@@ -14,3 +14,12 @@ config.status
 src/check_dif
 src/dc2uddf
 .deps
+.crush
+.vscode/
+output/
+llm/
+*.uddf
+*.log
+memory_dump_results.txt
+test-driver
+*.trs
