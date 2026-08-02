@@ -1,7 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <check.h>
 #include "dif/dif.h"
+#include "dumpfile.h"
 
 /**
  * helper function to create a couple of dives for testing of algorithms
@@ -295,6 +297,136 @@ START_TEST (test_dif_gasmix_type)
 }
 END_TEST
 
+/**
+ * helper to append one Uwatec Smart framed record to a buffer:
+ * [A5 A5 5A 5A][uint32 LE length incl. 8-byte header][payload]
+ */
+static gsize _dump_append_record(guint8 *buf, gsize offset,
+                                 const guint8 *payload, guint32 payloadSize) {
+    guint32 length = payloadSize + 8;
+    buf[offset]   = 0xA5;
+    buf[offset+1] = 0xA5;
+    buf[offset+2] = 0x5A;
+    buf[offset+3] = 0x5A;
+    buf[offset+4] = length & 0xFF;
+    buf[offset+5] = (length >> 8) & 0xFF;
+    buf[offset+6] = (length >> 16) & 0xFF;
+    buf[offset+7] = (length >> 24) & 0xFF;
+    memcpy(buf + offset + 8, payload, payloadSize);
+    return offset + length;
+}
+
+typedef struct {
+    guint count;
+    guint stopAfter;   /* 0 = never stop early */
+    gsize sizes[8];
+} dump_cb_data_t;
+
+static gboolean _dump_count_cb(const guint8 *record, gsize size, guint index,
+                               gpointer userdata) {
+    dump_cb_data_t *data = userdata;
+    data->sizes[index] = size;
+    data->count++;
+    /* every record must start with the magic */
+    fail_unless(record[0] == 0xA5 && record[2] == 0x5A,
+                "callback record does not start with the framing header");
+    if (data->stopAfter > 0 && data->count >= data->stopAfter) {
+        return FALSE;
+    }
+    return TRUE;
+}
+
+START_TEST (test_dumpfile_split_three_records)
+{
+    guint8 buf[256];
+    guint8 p1[4] = {1, 2, 3, 4};
+    guint8 p2[16] = {0};
+    guint8 p3[2] = {9, 9};
+    gsize len = 0;
+    len = _dump_append_record(buf, len, p1, sizeof(p1));
+    len = _dump_append_record(buf, len, p2, sizeof(p2));
+    len = _dump_append_record(buf, len, p3, sizeof(p3));
+
+    dump_cb_data_t data = {0, 0, {0}};
+    GError *err = NULL;
+    gint n = dumpfile_foreach_uwatec_smart(buf, len, _dump_count_cb, &data, &err);
+    fail_unless(n == 3, "expected 3 records, got %d", n);
+    fail_unless(err == NULL, "unexpected error: %s", err ? err->message : "");
+    fail_unless(data.sizes[0] == 12 && data.sizes[1] == 24 && data.sizes[2] == 10,
+                "record sizes should include the 8-byte header");
+}
+END_TEST
+
+START_TEST (test_dumpfile_stop_early)
+{
+    guint8 buf[256];
+    guint8 payload[4] = {0};
+    gsize len = 0;
+    len = _dump_append_record(buf, len, payload, sizeof(payload));
+    len = _dump_append_record(buf, len, payload, sizeof(payload));
+    len = _dump_append_record(buf, len, payload, sizeof(payload));
+
+    dump_cb_data_t data = {0, 1, {0}};
+    GError *err = NULL;
+    gint n = dumpfile_foreach_uwatec_smart(buf, len, _dump_count_cb, &data, &err);
+    fail_unless(n == 1, "expected iteration to stop after 1 record, got %d", n);
+    fail_unless(err == NULL, "stopping early should not be an error");
+    fail_unless(data.count == 1, "callback ran %u times after requesting stop",
+                data.count);
+}
+END_TEST
+
+START_TEST (test_dumpfile_bad_magic)
+{
+    guint8 buf[16] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
+    dump_cb_data_t data = {0, 0, {0}};
+    GError *err = NULL;
+    gint n = dumpfile_foreach_uwatec_smart(buf, sizeof(buf), _dump_count_cb,
+                                           &data, &err);
+    fail_unless(n == -1, "bad magic should fail");
+    fail_unless(err != NULL && strstr(err->message, "memory image") != NULL,
+                "error should hint that memory images are not replayable");
+    g_clear_error(&err);
+}
+END_TEST
+
+START_TEST (test_dumpfile_truncated)
+{
+    guint8 buf[256];
+    guint8 payload[4] = {0};
+    gsize len = _dump_append_record(buf, 0, payload, sizeof(payload));
+    /* second record claims more bytes than remain in the buffer */
+    buf[len]   = 0xA5;
+    buf[len+1] = 0xA5;
+    buf[len+2] = 0x5A;
+    buf[len+3] = 0x5A;
+    buf[len+4] = 0xFF;
+    buf[len+5] = 0x00;
+    buf[len+6] = 0x00;
+    buf[len+7] = 0x00;
+    len += 8;
+
+    dump_cb_data_t data = {0, 0, {0}};
+    GError *err = NULL;
+    gint n = dumpfile_foreach_uwatec_smart(buf, len, _dump_count_cb, &data, &err);
+    fail_unless(n == -1, "truncated record should fail");
+    fail_unless(err != NULL && strstr(err->message, "offset") != NULL,
+                "error should mention the byte offset");
+    g_clear_error(&err);
+}
+END_TEST
+
+START_TEST (test_dumpfile_empty)
+{
+    dump_cb_data_t data = {0, 0, {0}};
+    GError *err = NULL;
+    gint n = dumpfile_foreach_uwatec_smart(NULL, 0, _dump_count_cb, &data, &err);
+    fail_unless(n == -1, "empty buffer should fail");
+    fail_unless(err != NULL, "empty buffer should set an error");
+    g_clear_error(&err);
+}
+END_TEST
+
 Suite *
 dif_suite (void)
 {
@@ -326,6 +458,14 @@ dif_suite (void)
     tcase_add_test(tc_algos, test_dif_alg_dc_initial_pressure_fix);
     tcase_add_test(tc_algos, test_dif_alg_dc_truncate_dives);
     suite_add_tcase(s, tc_algos);
+
+    TCase *tc_dumpfile = tcase_create("DumpFile");
+    tcase_add_test(tc_dumpfile, test_dumpfile_split_three_records);
+    tcase_add_test(tc_dumpfile, test_dumpfile_stop_early);
+    tcase_add_test(tc_dumpfile, test_dumpfile_bad_magic);
+    tcase_add_test(tc_dumpfile, test_dumpfile_truncated);
+    tcase_add_test(tc_dumpfile, test_dumpfile_empty);
+    suite_add_tcase(s, tc_dumpfile);
     return s;
 }
 

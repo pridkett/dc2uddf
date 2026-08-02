@@ -28,6 +28,7 @@
 #include <libdivecomputer/usbhid.h>
 
 #include "dif/dif.h"
+#include "dumpfile.h"
 #include "utils.h"
 
 static const char *g_cachedir = NULL;
@@ -41,14 +42,19 @@ typedef struct program_options_t {
   guchar truncateDives;
   guchar initialPressureFix;
   guchar dumpDives;
-  guchar dumpMemory;
   guchar useInvalidElements;
+  gchar *fromDump;       // replay dives from this dump file (no device)
+  gchar *saveDump;       // save raw dive records to this file during download
+  gchar *dumpMemoryFile; // save a full device memory image to this file
   int limit;    // limit number of dives (0 = unlimited)
   time_t since; // download dives since this timestamp
 } program_options_t;
 
 typedef struct dive_data_t {
-  dc_device_t *device;
+  dc_device_t *device; // NULL when replaying from a dump file
+  dc_context_t *context;
+  dc_descriptor_t *descriptor;
+  FILE *dumpFile; // when set, raw dive records are appended here
   unsigned int number;
   dc_buffer_t *fingerprint;
   dif_dive_collection_t *dc;
@@ -289,8 +295,22 @@ void sample_cb(dc_sample_type_t type, const dc_sample_value_t *value,
   }
 }
 
-static dc_status_t doparse(dif_dive_collection_t *dc, dc_device_t *device,
-                           const unsigned char data[], unsigned int size) {
+/* Creates a parser for a dive record. In live mode the device-bound
+ * dc_parser_new is used because it applies the device clock correction
+ * from DC_EVENT_CLOCK; in replay mode (no device) the descriptor-bound
+ * dc_parser_new2 is used instead. */
+static dc_status_t make_parser(dc_parser_t **parser, dive_data_t *divedata,
+                               const unsigned char data[], unsigned int size) {
+  if (divedata->device != NULL) {
+    return dc_parser_new(parser, divedata->device, data, size);
+  }
+  return dc_parser_new2(parser, divedata->context, divedata->descriptor, data,
+                        size);
+}
+
+static dc_status_t doparse(dive_data_t *divedata, const unsigned char data[],
+                           unsigned int size) {
+  dif_dive_collection_t *dc = divedata->dc;
   dif_dive_t *dive = NULL;
   unsigned int i = 0;
 
@@ -306,7 +326,7 @@ static dc_status_t doparse(dif_dive_collection_t *dc, dc_device_t *device,
   /* create the parser */
   message("Creating the parser.\n");
   dc_parser_t *parser = NULL;
-  dc_status_t rc = dc_parser_new(&parser, device, data, size);
+  dc_status_t rc = make_parser(&parser, divedata, data, size);
   if (rc != DC_STATUS_SUCCESS) {
     WARNING("Error creating the parser.");
     return rc;
@@ -412,8 +432,21 @@ static int dive_cb(const unsigned char *data, unsigned int size,
                    void *userdata) {
   unsigned int i;
   dive_data_t *divedata = (dive_data_t *)userdata;
-  dif_dive_collection_t *dc = divedata->dc;
   divedata->number++;
+
+  // Save the raw dive record before any filtering: the bytes were already
+  // transferred over the (slow) wire, so they always belong in the dump.
+  if (divedata->dumpFile != NULL) {
+    if (fwrite(data, 1, size, divedata->dumpFile) != size) {
+      WARNING("Error writing dive record to dump file; disabling dump.");
+      fclose(divedata->dumpFile);
+      divedata->dumpFile = NULL;
+    } else {
+      // flush per record so an interrupted download still leaves a
+      // valid, replayable prefix (the format is self-delimiting)
+      fflush(divedata->dumpFile);
+    }
+  }
 
   // Check if we've hit the limit
   if (divedata->limit > 0 && divedata->collected >= divedata->limit) {
@@ -424,7 +457,7 @@ static int dive_cb(const unsigned char *data, unsigned int size,
   // Parse datetime to check --since filter
   if (divedata->since > 0) {
     dc_parser_t *parser = NULL;
-    dc_status_t rc = dc_parser_new(&parser, divedata->device, data, size);
+    dc_status_t rc = make_parser(&parser, divedata, data, size);
     if (rc == DC_STATUS_SUCCESS) {
       dc_datetime_t dt = {0};
       rc = dc_parser_get_datetime(parser, &dt);
@@ -456,7 +489,7 @@ static int dive_cb(const unsigned char *data, unsigned int size,
   }
   message("\n");
 
-  doparse(dc, divedata->device, data, size);
+  doparse(divedata, data, size);
   divedata->collected++;
 
   return 1;
@@ -515,6 +548,28 @@ void sighandler(int signum) {
 }
 
 static int cancel_cb(void *userdata) { return g_cancel; }
+
+/* Applies the post-processing algorithms and saves the collected dives
+ * as UDDF. Shared by the live download and dump replay paths. */
+static void process_and_save(dive_data_t *divedata,
+                             program_options_t *options) {
+  xml_options_t *xmlOptions = dif_xml_options_alloc();
+  xmlOptions->filename = options->xmlfile;
+  xmlOptions->useInvalidElements = options->useInvalidElements;
+
+  if (options->truncateDives) {
+    divedata->dc = dif_alg_dc_truncate_dives(divedata->dc);
+  }
+
+  if (options->initialPressureFix) {
+    divedata->dc = dif_alg_dc_initial_pressure_fix(divedata->dc);
+  }
+  dif_save_dive_collection_uddf_options(divedata->dc, xmlOptions);
+
+  dif_dive_collection_free(divedata->dc);
+  divedata->dc = NULL;
+  dif_xml_options_free(xmlOptions);
+}
 
 static dc_status_t dowork(dc_context_t *context, dc_descriptor_t *descriptor,
                           program_options_t *options,
@@ -604,8 +659,28 @@ static dc_status_t dowork(dc_context_t *context, dc_descriptor_t *descriptor,
   }
 
   /* dump the memory if requested */
-  if (options->dumpMemory) {
-    WARNING("Memory dump not enabled.");
+  if (options->dumpMemoryFile != NULL) {
+    message("Dumping the device memory to %s.\n", options->dumpMemoryFile);
+    dc_buffer_t *memory = dc_buffer_new(0);
+    rc = dc_device_dump(device, memory);
+    if (rc != DC_STATUS_SUCCESS) {
+      WARNING("Error dumping the device memory; continuing with download.");
+    } else {
+      FILE *fp = fopen(options->dumpMemoryFile, "wb");
+      if (fp == NULL ||
+          fwrite(dc_buffer_get_data(memory), 1, dc_buffer_get_size(memory),
+                 fp) != dc_buffer_get_size(memory)) {
+        WARNING("Error writing the memory dump file.");
+      } else {
+        message("Wrote %lu bytes of device memory to %s.\n",
+                (unsigned long)dc_buffer_get_size(memory),
+                options->dumpMemoryFile);
+      }
+      if (fp != NULL) {
+        fclose(fp);
+      }
+    }
+    dc_buffer_free(memory);
   }
 
   /* dump the dives if requested */
@@ -615,40 +690,48 @@ static dc_status_t dowork(dc_context_t *context, dc_descriptor_t *descriptor,
     dif_dive_collection_t *dc = dif_dive_collection_alloc();
 
     divedata.device = device;
+    divedata.context = context;
+    divedata.descriptor = descriptor;
+    divedata.dumpFile = NULL;
     divedata.fingerprint = NULL;
     divedata.number = 0;
     divedata.dc = dc;
     divedata.limit = options->limit;
     divedata.since = options->since;
     divedata.collected = 0;
+
+    if (options->saveDump != NULL) {
+      divedata.dumpFile = fopen(options->saveDump, "wb");
+      if (divedata.dumpFile == NULL) {
+        WARNING("Error opening the dive dump file for writing.");
+        dif_dive_collection_free(divedata.dc);
+        dc_device_close(device);
+        dc_iostream_close(iostream);
+        return DC_STATUS_IO;
+      }
+      message("Saving raw dive records to %s.\n", options->saveDump);
+    }
+
     /* download the dives */
     message("Downloading the dives.\n");
     rc = dc_device_foreach(device, dive_cb, &divedata);
+    if (divedata.dumpFile != NULL) {
+      fclose(divedata.dumpFile);
+      divedata.dumpFile = NULL;
+    }
     if (rc != DC_STATUS_SUCCESS) {
       WARNING("Error downloading the dives.");
       dc_buffer_free(divedata.fingerprint);
+      dif_dive_collection_free(divedata.dc);
       dc_device_close(device);
       dc_iostream_close(iostream);
       return rc;
     }
 
-    xml_options_t *xmlOptions = dif_xml_options_alloc();
-    xmlOptions->filename = options->xmlfile;
-    xmlOptions->useInvalidElements = options->useInvalidElements;
-
-    if (options->truncateDives) {
-      divedata.dc = dif_alg_dc_truncate_dives(divedata.dc);
-    }
-
-    if (options->initialPressureFix) {
-      divedata.dc = dif_alg_dc_initial_pressure_fix(divedata.dc);
-    }
-    dif_save_dive_collection_uddf_options(divedata.dc, xmlOptions);
+    process_and_save(&divedata, options);
 
     /* free the fingerprint buffer */
     dc_buffer_free(divedata.fingerprint);
-    dif_dive_collection_free(divedata.dc);
-    dif_xml_options_free(xmlOptions);
   }
 
   /* close the device */
@@ -662,6 +745,61 @@ static dc_status_t dowork(dc_context_t *context, dc_descriptor_t *descriptor,
 
   /* close the I/O stream */
   dc_iostream_close(iostream);
+
+  return DC_STATUS_SUCCESS;
+}
+
+/* Bridges the dump file splitter to dive_cb, which expects the same record
+ * bytes it would receive from dc_device_foreach in a live download. */
+static gboolean replay_record_cb(const guint8 *record, gsize size, guint index,
+                                 gpointer userdata) {
+  if (g_cancel) {
+    return FALSE;
+  }
+  return dive_cb(record, (unsigned int)size, NULL, 0, userdata) != 0;
+}
+
+/* Replays dives from an on-disk dump file instead of a live device. */
+static dc_status_t doreplay(dc_context_t *context, dc_descriptor_t *descriptor,
+                            program_options_t *options) {
+  gchar *contents = NULL;
+  gsize length = 0;
+  GError *error = NULL;
+
+  message("Replaying dives from %s.\n", options->fromDump);
+  if (!g_file_get_contents(options->fromDump, &contents, &length, &error)) {
+    WARNING("Error reading the dump file.");
+    fprintf(stderr, "error: %s\n", error->message);
+    g_error_free(error);
+    return DC_STATUS_IO;
+  }
+
+  dive_data_t divedata = {0};
+  divedata.device = NULL;
+  divedata.context = context;
+  divedata.descriptor = descriptor;
+  divedata.dumpFile = NULL;
+  divedata.fingerprint = NULL;
+  divedata.number = 0;
+  divedata.dc = dif_dive_collection_alloc();
+  divedata.limit = options->limit;
+  divedata.since = options->since;
+  divedata.collected = 0;
+
+  gint records = dumpfile_foreach_uwatec_smart(
+      (const guint8 *)contents, length, replay_record_cb, &divedata, &error);
+  if (records < 0) {
+    WARNING("Error splitting the dump file into dives.");
+    fprintf(stderr, "error: %s\n", error->message);
+    g_error_free(error);
+    dif_dive_collection_free(divedata.dc);
+    g_free(contents);
+    return DC_STATUS_DATAFORMAT;
+  }
+  message("Replayed %d records from %s.\n", records, options->fromDump);
+
+  process_and_save(&divedata, options);
+  g_free(contents);
 
   return DC_STATUS_SUCCESS;
 }
@@ -739,6 +877,13 @@ int dump_dives(program_options_t *options) {
   if (options->backend != NULL) {
     backend = lookup_type(options->backend);
   }
+
+  /* in replay mode there is no transport address, so -d (if given) selects
+   * the device descriptor by name instead — the parser's sample decoding
+   * is model-specific, so picking the right product matters */
+  if (options->fromDump != NULL && options->devname != NULL) {
+    name = options->devname;
+  }
   signal(SIGINT, sighandler);
 
   message_set_logfile(logfile);
@@ -770,9 +915,13 @@ int dump_dives(program_options_t *options) {
     return EXIT_FAILURE;
   }
 
-  dc_buffer_t *fp = fpconvert(fingerprint);
-  rc = dowork(context, descriptor, options, fp);
-  dc_buffer_free(fp);
+  if (options->fromDump != NULL) {
+    rc = doreplay(context, descriptor, options);
+  } else {
+    dc_buffer_t *fp = fpconvert(fingerprint);
+    rc = dowork(context, descriptor, options, fp);
+    dc_buffer_free(fp);
+  }
   /* FIXME: why aren't calls to errmsg working? */
   // message("Result: %s\n", errmsg(rc));
 
@@ -799,6 +948,12 @@ void usage() {
   fprintf(
       stderr,
       "  -s,--since DATE: download dives since DATE (format: YYYY-MM-DD)\n");
+  fprintf(stderr, "  --from-dump FILE: parse dives from a saved dive-data "
+                  "dump instead of a device (-d not required)\n");
+  fprintf(stderr, "  --save-dump FILE: during a live download, also save the "
+                  "raw dive records to FILE (replayable with --from-dump)\n");
+  fprintf(stderr, "  --dump-memory FILE: during a live session, save a full "
+                  "device memory image to FILE (NOT replayable)\n");
   fprintf(stderr, "  --invalid: add invalid <event> and <vendor> tags to "
                   "assist debugging\n");
   fprintf(stderr, "  --listbackends: print all the backends\n");
@@ -842,8 +997,10 @@ int main(int argc, char **argv) {
   options.initialPressureFix = 0;
   options.logfile = "output.log";
   options.dumpDives = 1;
-  options.dumpMemory = 0;
   options.useInvalidElements = 0;
+  options.fromDump = NULL;
+  options.saveDump = NULL;
+  options.dumpMemoryFile = NULL;
   options.limit = 0; // 0 = unlimited
   options.since = 0; // 0 = no date filter
 
@@ -859,6 +1016,9 @@ int main(int argc, char **argv) {
       {"invalid", no_argument, NULL, 0},
       {"listdevices", no_argument, NULL, 0},
       {"listbackends", no_argument, NULL, 0},
+      {"from-dump", required_argument, NULL, 0},
+      {"save-dump", required_argument, NULL, 0},
+      {"dump-memory", required_argument, NULL, 0},
       {NULL, no_argument, NULL, 0}};
   char *getopt_short = "b:d:o:hitl:s:";
   /* getopt_long stores the option index here. */
@@ -879,6 +1039,15 @@ int main(int argc, char **argv) {
       }
       if (g_strcmp0("invalid", long_options[option_index].name) == 0) {
         options.useInvalidElements = 1;
+      }
+      if (g_strcmp0("from-dump", long_options[option_index].name) == 0) {
+        options.fromDump = optarg;
+      }
+      if (g_strcmp0("save-dump", long_options[option_index].name) == 0) {
+        options.saveDump = optarg;
+      }
+      if (g_strcmp0("dump-memory", long_options[option_index].name) == 0) {
+        options.dumpMemoryFile = optarg;
       }
       break;
 
@@ -939,7 +1108,16 @@ int main(int argc, char **argv) {
     opt = getopt_long(argc, argv, getopt_short, long_options, &option_index);
   }
 
-  if (options.backend == NULL || options.devname == NULL) {
+  if (options.fromDump != NULL &&
+      (options.saveDump != NULL || options.dumpMemoryFile != NULL)) {
+    fprintf(stderr, "--from-dump cannot be combined with --save-dump or "
+                    "--dump-memory (both require a live device)\n");
+    usage();
+  }
+
+  /* a device name is only needed when talking to a real device */
+  if (options.backend == NULL ||
+      (options.devname == NULL && options.fromDump == NULL)) {
     usage();
   }
 
