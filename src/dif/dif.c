@@ -1,6 +1,13 @@
 #include <glib.h>
 #include "dif.h"
 
+/**
+ * @brief Allocates memory for a new dive collection
+ * 
+ * Creates and initializes a new dive collection structure.
+ * 
+ * @return A pointer to the newly allocated dive collection, or NULL on failure
+ */
 dif_dive_collection_t *dif_dive_collection_alloc() {
     dif_dive_collection_t *dc;
     dc = g_malloc(sizeof(dif_dive_collection_t));
@@ -8,6 +15,14 @@ dif_dive_collection_t *dif_dive_collection_alloc() {
     return dc;
 }
 
+/**
+ * @brief Frees memory allocated for a dive collection
+ * 
+ * Releases all memory associated with a dive collection, including all dives
+ * and their associated data structures.
+ * 
+ * @param dc Pointer to the dive collection to free
+ */
 void dif_dive_collection_free(dif_dive_collection_t *dc) {
     g_list_free_full(dc->dives, (GDestroyNotify) dif_dive_free);
     g_free(dc);
