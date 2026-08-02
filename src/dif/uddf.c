@@ -16,15 +16,39 @@
 #define CELSIUS_TO_KELVIN(a) (a+273.15)
 
 /**
+ * Child elements of <waypoint> in the exact order required by the
+ * waypointType xs:sequence in the UDDF 3.2.3 schema. Note this is NOT
+ * alphabetical (e.g. divemode, gradientfactor, measuredpo2 and nodecotime
+ * come after temperature). Elements not in this list (e.g. the non-schema
+ * event/vendor debug elements) sort last.
+ */
+static const char *_waypointElementOrder[] = {
+    "alarm", "batterychargecondition", "cns", "decostop", "bodytemperature",
+    "calculatedpo2", "depth", "divetime", "heading", "heartrate", "otu",
+    "pulserate", "remainingbottomtime", "remainingo2time", "setmarker",
+    "setpo2", "switchmix", "tankpressure", "temperature", "divemode",
+    "gradientfactor", "measuredpo2", "nodecotime", NULL};
+
+static gint _waypointElementRank(const xmlChar *name) {
+    gint i;
+    for (i = 0; _waypointElementOrder[i] != NULL; i++) {
+        if (xmlStrcmp(name, BAD_CAST _waypointElementOrder[i]) == 0) {
+            return i;
+        }
+    }
+    return i;
+}
+
+/**
  * helper function for comparing two nodes and sorting them
  *
- * This is mainly used for the <waypoint> tag which requires that each of the
- * subsamples be in alphabetical order
+ * This is used for the <waypoint> tag whose children must appear in the
+ * order defined by the waypointType sequence in the UDDF schema
  */
 gint _g_list_sort_xmlNodePtrs(gconstpointer a, gconstpointer b) {
     xmlNodePtr node1 = (xmlNodePtr) a;
     xmlNodePtr node2 = (xmlNodePtr) b;
-    return xmlStrcmp(node1->name, node2->name);
+    return _waypointElementRank(node1->name) - _waypointElementRank(node2->name);
 }
 
 /**
@@ -192,10 +216,14 @@ xmlNodePtr _createWaypoint(dif_sample_t *sample, xml_options_t *options) {
             xmlSubsamples = g_list_append(xmlSubsamples, xmlHeartrate);
             break;
         case DIF_SAMPLE_BEARING:
-            g_snprintf(nodeText, MAX_STRING_LENGTH, "%d", ss->value.bearing);
-            xmlNodePtr xmlHeading = xmlNewNode(NULL, BAD_CAST "heading");
-            xmlAddChild(xmlHeading, xmlNewText(BAD_CAST nodeText));
-            xmlSubsamples = g_list_append(xmlSubsamples, xmlHeading);
+            /* 65535 is the "no data" sentinel from some parsers (e.g. Uwatec);
+             * only emit compass headings in the valid 0-359 range */
+            if (ss->value.bearing <= 359) {
+                g_snprintf(nodeText, MAX_STRING_LENGTH, "%d", ss->value.bearing);
+                xmlNodePtr xmlHeading = xmlNewNode(NULL, BAD_CAST "heading");
+                xmlAddChild(xmlHeading, xmlNewText(BAD_CAST nodeText));
+                xmlSubsamples = g_list_append(xmlSubsamples, xmlHeading);
+            }
             break;
         case DIF_SAMPLE_VENDOR:
             if (options->useInvalidElements) {
@@ -268,21 +296,21 @@ xmlNodePtr _createDive(dif_dive_t *dive, gchar *diveid, xml_options_t *options) 
     }
     xmlAddChild(xmlInformationBeforeDive, xmlSurfaceIntervalBeforeDive);
     
+    xmlAddChild(xmlDive, xmlInformationBeforeDive);
+
     /* if gasmixes are specified, then we'll link to them */
-    /* tankdata must be inside informationbeforedive according to UDDF 3.2.3 */
+    /* per the UDDF 3.2.3 diveType sequence, tankdata elements are direct
+     * children of <dive>, between informationbeforedive and samples */
     if (dive->gasmixes != NULL) {
-        guint ctr = 0;
         GList *gasmixes = g_list_first(dive->gasmixes);
         while (gasmixes != NULL) {
             xmlNodePtr xmlTankdata = xmlNewNode(NULL, BAD_CAST "tankdata");
             // id is NOT a valid parameter for tankdata
-            // g_snprintf(tempStr, MAX_STRING_LENGTH, "%s_tank%d", diveid, ctr++);
-            // xmlNewProp(xmlTankdata, BAD_CAST "id", BAD_CAST tempStr);
             dif_gasmix_t *gasmix = gasmixes->data;
             xmlNodePtr xmlLink = xmlNewNode(NULL, BAD_CAST "link");
             xmlNewProp(xmlLink, BAD_CAST "ref", BAD_CAST dif_gasmix_name(gasmix));
             xmlAddChild(xmlTankdata, xmlLink);
-            xmlAddChild(xmlInformationBeforeDive, xmlTankdata);
+            xmlAddChild(xmlDive, xmlTankdata);
 
             // FIXME: this gets the initial pressure of any tank and isn't bound
             // to the specific tank. Need to see how this actually works in more
@@ -298,18 +326,19 @@ xmlNodePtr _createDive(dif_dive_t *dive, gchar *diveid, xml_options_t *options) 
             gasmixes = g_list_next(gasmixes);
         }
     }
-    
-    xmlAddChild(xmlDive, xmlInformationBeforeDive);
 
-    /* iterate over all of the samples */
-    xmlNodePtr xmlSamples = xmlNewNode(NULL, BAD_CAST "samples");
-    xmlAddChild(xmlDive, xmlSamples);
+    /* iterate over all of the samples; samples requires at least one
+     * waypoint child, so omit the element entirely when there are none */
     dive = dif_dive_sort_samples(dive);
     GList *samples = g_list_first(dive->samples);
-    while (samples != NULL) {
-        xmlNodePtr xmlWaypoint = _createWaypoint(samples->data, options);
-        xmlAddChild(xmlSamples, xmlWaypoint);
-        samples = g_list_next(samples);
+    if (samples != NULL) {
+        xmlNodePtr xmlSamples = xmlNewNode(NULL, BAD_CAST "samples");
+        xmlAddChild(xmlDive, xmlSamples);
+        while (samples != NULL) {
+            xmlNodePtr xmlWaypoint = _createWaypoint(samples->data, options);
+            xmlAddChild(xmlSamples, xmlWaypoint);
+            samples = g_list_next(samples);
+        }
     }
 
     /* create the informationafterdive field */
@@ -329,7 +358,7 @@ xmlNodePtr _createDive(dif_dive_t *dive, gchar *diveid, xml_options_t *options) 
 
     if (lowestTemperature < 9998) {
         xmlNodePtr xmlLowestTemperature = xmlNewNode(NULL, BAD_CAST "lowesttemperature");
-        g_snprintf(tempStr, MAX_STRING_LENGTH, "%0.1f", (double)lowestTemperature);
+        g_snprintf(tempStr, MAX_STRING_LENGTH, "%0.1f", (double)CELSIUS_TO_KELVIN(lowestTemperature));
         xmlAddChild(xmlLowestTemperature, xmlNewText(BAD_CAST tempStr));
         xmlAddChild(xmlInformationAfterDive, xmlLowestTemperature);
     }
@@ -404,9 +433,12 @@ xmlNodePtr _createProfileData(dif_dive_collection_t *dc, xml_options_t *options)
         GDateTime *dt = dive->datetime;
         /* if a date isn't present, always give it a new repetition group */
         if (dt != NULL) {
-            g_date_time_get_ymd(dt, &year2, &month2, &year2);
+            g_date_time_get_ymd(dt, &year2, &month2, &day2);
         } else {
-            year2 = year1 ++;
+            /* no date available: force this dive into its own group */
+            year2 = year1 + 1;
+            month2 = 0;
+            day2 = 0;
         }
         /* if this next dive doesn't belong to this group, output the current
          * repetition group and clear the list
@@ -434,8 +466,6 @@ xmlNodePtr _createProfileData(dif_dive_collection_t *dc, xml_options_t *options)
 }
 
 xmlNodePtr _createGasDefinitions(dif_dive_collection_t *dc, xml_options_t *options) {
-    xmlNodePtr xmlGasDefinitions = xmlNewNode(NULL, BAD_CAST "gasdefinitions");
-
     /* iterate over all of the dives and iterate over their gasmixes
      * and store the different gas mixes in a hash table
      */
@@ -455,6 +485,15 @@ xmlNodePtr _createGasDefinitions(dif_dive_collection_t *dc, xml_options_t *optio
         }
         dives = g_list_next(dives);
     }
+
+    /* gasdefinitions requires at least one mix child; omit the element
+     * entirely when no gas mixes were found */
+    if (g_hash_table_size(gasMixes) == 0) {
+        g_hash_table_destroy(gasMixes);
+        return NULL;
+    }
+
+    xmlNodePtr xmlGasDefinitions = xmlNewNode(NULL, BAD_CAST "gasdefinitions");
 
     /* iterate over the hash table to output the mixes */
     gchar *tempStr = g_malloc(MAX_STRING_LENGTH);
@@ -560,7 +599,10 @@ void dif_save_dive_collection_uddf_options(dif_dive_collection_t *dc, xml_option
     xmlNewProp(root_node, BAD_CAST "version", BAD_CAST UDDF_VERSION);
     xmlDocSetRootElement(doc, root_node);
     xmlAddChild(root_node, _createGeneratorBlock(options));
-    xmlAddChild(root_node, _createGasDefinitions(dc, options));
+    xmlNodePtr gasDefinitions = _createGasDefinitions(dc, options);
+    if (gasDefinitions != NULL) {
+        xmlAddChild(root_node, gasDefinitions);
+    }
     printf("creating profile data\n");
     xmlAddChild(root_node, _createProfileData(dc, options));
     printf("saving data\n");
