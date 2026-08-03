@@ -1,6 +1,6 @@
 dc2uddf
 =======
-Copyright (c) 2012-2025 [Patrick Wagstrom][pwagstrom]
+Copyright (c) 2012-2026 [Patrick Wagstrom][pwagstrom]
 
 This is a simple tool that uses [libdivecomputer][libdc] to connect a dive computer
 and download all the dive information into a [UDDF][uddf] 3.2.3 file. This information
@@ -42,13 +42,15 @@ On Ubuntu you can install most of these with the following command:
 Compiling the Program
 =====================
 
-This step varies a little bit depending on how you got the software. If you obtained dc2uddf as a tarball release compliation is easy and straightforward:
+This step varies a little bit depending on how you got the software. If you
+obtained dc2uddf as a tarball release compliation is easy and straightforward:
 
     ./configure
     make
     make install
 
-If you are running off the git version of the software then you'll need to run a few other commands first.
+If you are running off the git version of the software then you'll need to run
+a few other commands first.
 
     automake --add-missing
     cp README.md README
@@ -61,7 +63,13 @@ If you are running off the git version of the software then you'll need to run a
 Running the Program
 ===================
 
-I only have a single dive computer, the Uwatec Galileo Luna. There are two ways that I can get everything up and running on my Linux Virtual Machine - either by hand when I boot the machine, or by changing some settings so IrDA starts at boot. I'll describe both here:
+This program was designed around the needs I have for my increasing old dive
+computer - the Uwatec Galileo Luna. The major challenge for this device is that
+it uses IrDA to transmit data, which isn't supported just about anywhere
+anymore. Thus, I use this program and an older Linux virtual machine to get the
+data off my computer. There are two ways that I can get everything up and
+running on my Linux Virtual Machine - either by hand when I boot the machine,
+or by changing some settings so IrDA starts at boot. I'll describe both here:
 
 USB IrDA Adapters
 -----------------
@@ -87,7 +95,10 @@ A few hard-won lessons about USB passthrough into a virtual machine:
 Starting IrDA by Hand
 ---------------------
 
-This is a fine way to handle things if you're testing the software. First, make sure to plug in your USB&rarr;IR dongle and then run the following commands to setup the IrDA subsystem (substitute `ks959_sir` or your adapter's driver for `mcs7780` as appropriate):
+This is a fine way to handle things if you're testing the software. First, make
+sure to plug in your USB&rarr;IR dongle and then run the following commands to
+setup the IrDA subsystem (substitute `ks959_sir` or your adapter's driver for
+`mcs7780` as appropriate):
 
     sudo modprobe ircomm
     sudo modprobe ircomm-tty
@@ -136,11 +147,15 @@ When the connection doesn't work, check things in this order:
 Starting IrDA at Boot
 ---------------------
 
-There's a two step process that you'll need to get this working at boot. First, you'll need to edit `/etc/modprobe.d/irda-utils.conf` and add the following line to the end of the file. This is really only needed if you're using the mcs7780 series of devices:
+There's a two step process that you'll need to get this working at boot. First,
+you'll need to edit `/etc/modprobe.d/irda-utils.conf` and add the following
+line to the end of the file. This is really only needed if you're using the
+mcs7780 series of devices:
 
     alias irda0 mcs7780
 
-Next, open up `/etc/default/irda-utils` and search for the lines that describe `ENABLE`, `DEVICE`, and `MAX_BAUD_RATE` and change them as follows:
+Next, open up `/etc/default/irda-utils` and search for the lines that describe
+`ENABLE`, `DEVICE`, and `MAX_BAUD_RATE` and change them as follows:
 
     ENABLE="true"
     DEVICE="irda0"
@@ -151,7 +166,10 @@ Then reboot and your IrDA setup should be running with no issues.
 Downloading Some Data
 ----------------------
 
-As the only computer I have is a Uwatec Galileo Luna, it's the only one that I can describe the process for. For IrDA devices, `-d` takes the 32-bit device address reported in `/proc/net/irda/discovery` (see above); for serial devices it takes the serial port path.
+As the only computer I have is a Uwatec Galileo Luna, it's the only one that I
+can describe the process for. For IrDA devices, `-d` takes the 32-bit device
+address reported in `/proc/net/irda/discovery` (see above); for serial devices
+it takes the serial port path.
 
     dc2uddf -b smart -d 0x5b31b527
 
@@ -159,7 +177,12 @@ The general format is:
 
     dc2uddf -b [backend name] -d [device address]
 
-You can get a list of the backend and device names with `dc2uddf --listbackends` and `dc2uddf --listdevices`. However, as I only have the Uwatec Galileo, it is the only device that is tested. (Older versions of dc2uddf accepted a product name like `"Uwatec Galileo"` for `-d` because the old libdivecomputer did its own IrDA discovery; with libdivecomputer 0.9 the numeric address is required for live downloads.)
+You can get a list of the backend and device names with `dc2uddf
+--listbackends` and `dc2uddf --listdevices`. However, as I only have the Uwatec
+Galileo, it is the only device that is tested. (Older versions of dc2uddf
+accepted a product name like `"Uwatec Galileo"` for `-d` because the old
+libdivecomputer did its own IrDA discovery; with libdivecomputer 0.9 the
+numeric address is required for live downloads.)
 
 Working With Dump Files
 -----------------------
