@@ -1,7 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <check.h>
+#include <libxml/parser.h>
+#include <libxml/xpath.h>
 #include "dif/dif.h"
 #include "dumpfile.h"
 
@@ -20,6 +23,7 @@ dif_dive_collection_t *_create_simple_dive_collection() {
 
     gdouble dive1_pressures[] =  {0.0, 0.0, 180.0, 179.0, 178.5, 177.5};
     gdouble dive1_depths[] =     {0.0, 1.0, 2.0,   2.0,   1.0,   0.0};
+    gdouble dive1_temps[] =      {21.5, 21.0, 20.5, 20.0,  20.5,  21.0};
     guint   dive1_timestamps[] = {0,   30,  60,    90,    120,   150};
     guint dive1_num_samples = sizeof(dive1_pressures)/sizeof(dive1_pressures[0]);
     dif_dive_t *dive1 = dif_dive_alloc();
@@ -37,8 +41,13 @@ dif_dive_collection_t *_create_simple_dive_collection() {
         dif_subsample_t *ssdepth = dif_subsample_alloc();
         ssdepth->type = DIF_SAMPLE_DEPTH;
         ssdepth->value.depth = dive1_depths[ctr];
+
+        dif_subsample_t *sstemp = dif_subsample_alloc();
+        sstemp->type = DIF_SAMPLE_TEMPERATURE;
+        sstemp->value.temperature = dive1_temps[ctr];
         sample = dif_sample_add_subsample(sample, sspressure);
         sample = dif_sample_add_subsample(sample, ssdepth);
+        sample = dif_sample_add_subsample(sample, sstemp);
         dive1 = dif_dive_add_sample(dive1, sample);
     }
     dif_gasmix_t *gasmix1 = dif_gasmix_alloc();
@@ -206,6 +215,263 @@ START_TEST (test_dif_sample_add_subsample)
     fail_unless(g_list_length(sample->subsamples) == 1,
                 "subsample not properly added");
     dif_sample_free(sample);
+}
+END_TEST
+
+START_TEST (test_dif_dive_set_avgdepth)
+{
+    dif_dive_t *dive = dif_dive_alloc();
+    fail_unless(!dive->hasAvgdepth,
+                "hasAvgdepth should be FALSE after alloc");
+    dive = dif_dive_set_avgdepth(dive, 12.3);
+    fail_unless(dive->hasAvgdepth,
+                "hasAvgdepth should be TRUE after set");
+    fail_unless(fabs(dive->avgdepth - 12.3) < 0.001,
+                "avgdepth not stored properly");
+    dif_dive_free(dive);
+}
+END_TEST
+
+START_TEST (test_dif_dive_set_tank_pressures)
+{
+    dif_dive_t *dive = dif_dive_alloc();
+    fail_unless(!dive->hasTankPressures,
+                "hasTankPressures should be FALSE after alloc");
+    dive = dif_dive_set_tank_pressures(dive, 200.0, 50.0);
+    fail_unless(dive->hasTankPressures,
+                "hasTankPressures should be TRUE after set");
+    fail_unless(fabs(dive->beginPressure - 200.0) < 0.001,
+                "beginPressure not stored properly");
+    fail_unless(fabs(dive->endPressure - 50.0) < 0.001,
+                "endPressure not stored properly");
+    dif_dive_free(dive);
+}
+END_TEST
+
+START_TEST (test_dif_dive_set_min_temperature)
+{
+    dif_dive_t *dive = dif_dive_alloc();
+    fail_unless(!dive->hasMinTemperature,
+                "hasMinTemperature should be FALSE after alloc");
+    dive = dif_dive_set_min_temperature(dive, 18.5);
+    fail_unless(dive->hasMinTemperature,
+                "hasMinTemperature should be TRUE after set");
+    fail_unless(fabs(dive->minTemperature - 18.5) < 0.001,
+                "minTemperature not stored properly");
+    dif_dive_free(dive);
+}
+END_TEST
+
+START_TEST (test_dif_dive_get_final_pressure)
+{
+    dif_dive_collection_t *dc = _create_simple_dive_collection();
+    dif_dive_t *dive = g_list_first(dc->dives)->data;
+    fail_unless(fabs(dif_dive_get_final_pressure(dive, -1) - 177.5) < 0.001,
+                "final pressure for any tank should be 177.5");
+    fail_unless(fabs(dif_dive_get_final_pressure(dive, 1) - 177.5) < 0.001,
+                "final pressure for tank 1 should be 177.5");
+    fail_unless(fabs(dif_dive_get_final_pressure(dive, 2)) < 0.001,
+                "final pressure for unknown tank should be 0.0");
+    dif_dive_collection_free(dc);
+}
+END_TEST
+
+START_TEST (test_dif_dive_get_final_pressure_no_pressure)
+{
+    dif_dive_t *dive = dif_dive_alloc();
+    dif_sample_t *sample = dif_sample_alloc();
+    sample->timestamp = 0;
+    dif_subsample_t *ssdepth = dif_subsample_alloc();
+    ssdepth->type = DIF_SAMPLE_DEPTH;
+    ssdepth->value.depth = 5.0;
+    sample = dif_sample_add_subsample(sample, ssdepth);
+    dive = dif_dive_add_sample(dive, sample);
+    fail_unless(fabs(dif_dive_get_final_pressure(dive, -1)) < 0.001,
+                "final pressure without pressure samples should be 0.0");
+    dif_dive_free(dive);
+}
+END_TEST
+
+START_TEST (test_dif_dive_get_initial_pressure_tank)
+{
+    dif_dive_collection_t *dc = _create_simple_dive_collection();
+    dif_dive_t *dive = g_list_first(dc->dives)->data;
+    fail_unless(dif_dive_get_initial_pressure_tank(dive) == 1,
+                "initial pressure tank of dive1 should be 1");
+    dif_dive_collection_free(dc);
+
+    dif_dive_t *emptyDive = dif_dive_alloc();
+    fail_unless(dif_dive_get_initial_pressure_tank(emptyDive) == -1,
+                "initial pressure tank without samples should be -1");
+    dif_dive_free(emptyDive);
+}
+END_TEST
+
+/**
+ * a dive with two transmitters: tank 1 reports early samples, tank 2
+ * reports later samples. begin and end pressures must both come from
+ * tank 1 (the tank of the first valid reading), never mix tanks.
+ */
+START_TEST (test_dif_dive_pressures_multi_tank)
+{
+    guint   timestamps[] = {0,   30,  60,  90};
+    gdouble pressures[]  = {200.0, 150.0, 180.0, 100.0};
+    guint   tanks[]      = {1,   1,   2,   2};
+    guint num_samples = sizeof(pressures)/sizeof(pressures[0]);
+
+    dif_dive_t *dive = dif_dive_alloc();
+    guint ctr;
+    for (ctr = 0; ctr < num_samples; ctr++) {
+        dif_sample_t *sample = dif_sample_alloc();
+        sample->timestamp = timestamps[ctr];
+        dif_subsample_t *sspressure = dif_subsample_alloc();
+        sspressure->type = DIF_SAMPLE_PRESSURE;
+        sspressure->value.pressure.tank = tanks[ctr];
+        sspressure->value.pressure.value = pressures[ctr];
+        sample = dif_sample_add_subsample(sample, sspressure);
+        dive = dif_dive_add_sample(dive, sample);
+    }
+
+    gint tank = dif_dive_get_initial_pressure_tank(dive);
+    fail_unless(tank == 1, "first valid pressure should come from tank 1");
+    fail_unless(fabs(dif_dive_get_initial_pressure(dive, tank) - 200.0) < 0.001,
+                "initial pressure for tank 1 should be 200.0");
+    fail_unless(fabs(dif_dive_get_final_pressure(dive, tank) - 150.0) < 0.001,
+                "final pressure for tank 1 should be 150.0, not tank 2's 100.0");
+    dif_dive_free(dive);
+}
+END_TEST
+
+START_TEST (test_dif_dive_get_average_depth)
+{
+    dif_dive_collection_t *dc = _create_simple_dive_collection();
+    dif_dive_t *dive = g_list_first(dc->dives)->data;
+    /* trapezoid over depths {0,1,2,2,1,0} at 30s spacing = 180m*s / 150s */
+    fail_unless(fabs(dif_dive_get_average_depth(dive) - 1.2) < 0.001,
+                "average depth of dive1 should be 1.2");
+    dif_dive_collection_free(dc);
+}
+END_TEST
+
+START_TEST (test_dif_dive_get_average_depth_edge)
+{
+    dif_dive_t *dive = dif_dive_alloc();
+    fail_unless(fabs(dif_dive_get_average_depth(dive)) < 0.001,
+                "average depth without samples should be 0.0");
+    dif_sample_t *sample = dif_sample_alloc();
+    sample->timestamp = 42;
+    dif_subsample_t *ssdepth = dif_subsample_alloc();
+    ssdepth->type = DIF_SAMPLE_DEPTH;
+    ssdepth->value.depth = 7.5;
+    sample = dif_sample_add_subsample(sample, ssdepth);
+    dive = dif_dive_add_sample(dive, sample);
+    fail_unless(fabs(dif_dive_get_average_depth(dive) - 7.5) < 0.001,
+                "average depth with a single sample should be that depth");
+    dif_dive_free(dive);
+}
+END_TEST
+
+START_TEST (test_dif_dive_get_greatest_depth)
+{
+    dif_dive_collection_t *dc = _create_simple_dive_collection();
+    dif_dive_t *dive = g_list_first(dc->dives)->data;
+    fail_unless(fabs(dif_dive_get_greatest_depth(dive) - 2.0) < 0.001,
+                "greatest depth of dive1 should be 2.0");
+    dif_dive_collection_free(dc);
+
+    dif_dive_t *emptyDive = dif_dive_alloc();
+    fail_unless(fabs(dif_dive_get_greatest_depth(emptyDive)) < 0.001,
+                "greatest depth without samples should be 0.0");
+    dif_dive_free(emptyDive);
+}
+END_TEST
+
+START_TEST (test_dif_dive_get_lowest_temperature)
+{
+    dif_dive_collection_t *dc = _create_simple_dive_collection();
+    dif_dive_t *dive1 = g_list_first(dc->dives)->data;
+    fail_unless(fabs(dif_dive_get_lowest_temperature(dive1) - 20.0) < 0.001,
+                "lowest temperature of dive1 should be 20.0");
+    /* dive2 has no temperature subsamples */
+    dif_dive_t *dive2 = g_list_next(g_list_first(dc->dives))->data;
+    fail_unless(fabs(dif_dive_get_lowest_temperature(dive2)) < 0.001,
+                "lowest temperature without temperature samples should be 0.0");
+    dif_dive_collection_free(dc);
+}
+END_TEST
+
+START_TEST (test_dif_dive_get_dive_duration)
+{
+    dif_dive_collection_t *dc = _create_simple_dive_collection();
+    dif_dive_t *dive = g_list_first(dc->dives)->data;
+    fail_unless(dif_dive_get_dive_duration(dive) == 150,
+                "dive duration of dive1 should be 150");
+    dif_dive_collection_free(dc);
+
+    dif_dive_t *emptyDive = dif_dive_alloc();
+    fail_unless(dif_dive_get_dive_duration(emptyDive) == 0,
+                "dive duration without samples should be 0");
+    dif_dive_free(emptyDive);
+}
+END_TEST
+
+/**
+ * helper for the read-back test: evaluate an xpath expression and return
+ * the first result node's content as a double, or NAN if there is no match
+ */
+static gdouble _xpath_double(xmlXPathContextPtr ctx, const gchar *expr) {
+    gdouble result = NAN;
+    xmlXPathObjectPtr obj = xmlXPathEvalExpression(BAD_CAST expr, ctx);
+    if (obj != NULL && obj->nodesetval != NULL && obj->nodesetval->nodeNr > 0) {
+        xmlChar *content = xmlNodeGetContent(obj->nodesetval->nodeTab[0]);
+        if (content != NULL) {
+            result = g_ascii_strtod((const gchar *)content, NULL);
+            xmlFree(content);
+        }
+    }
+    if (obj != NULL) {
+        xmlXPathFreeObject(obj);
+    }
+    return result;
+}
+
+START_TEST (test_dif_uddf_informationafterdive_values)
+{
+    dif_dive_collection_t *dc = _create_simple_dive_collection();
+    dif_save_dive_collection_uddf(dc, "test_iad.uddf");
+    dif_dive_collection_free(dc);
+
+    xmlDocPtr doc = xmlReadFile("test_iad.uddf", NULL, 0);
+    fail_unless(doc != NULL, "could not parse test_iad.uddf");
+    xmlXPathContextPtr ctx = xmlXPathNewContext(doc);
+    fail_unless(ctx != NULL, "could not create xpath context");
+
+    /* dive1 is the first dive in the document; values are emitted with
+     * one decimal digit, so allow for the rounding */
+    gdouble value;
+    value = _xpath_double(ctx, "(//*[local-name()='informationafterdive'])[1]/*[local-name()='lowesttemperature']");
+    fail_unless(fabs(value - 293.15) < 0.051,
+                "lowesttemperature should be ~293.15K (20.0C), got %f", value);
+    value = _xpath_double(ctx, "(//*[local-name()='informationafterdive'])[1]/*[local-name()='greatestdepth']");
+    fail_unless(fabs(value - 2.0) < 0.051,
+                "greatestdepth should be 2.0, got %f", value);
+    value = _xpath_double(ctx, "(//*[local-name()='informationafterdive'])[1]/*[local-name()='diveduration']");
+    fail_unless(fabs(value - 150.0) < 0.051,
+                "diveduration should be 150.0, got %f", value);
+    value = _xpath_double(ctx, "(//*[local-name()='informationafterdive'])[1]/*[local-name()='averagedepth']");
+    fail_unless(fabs(value - 1.2) < 0.051,
+                "averagedepth should be 1.2, got %f", value);
+    value = _xpath_double(ctx, "(//*[local-name()='informationafterdive'])[1]/*[local-name()='pressuredrop']");
+    fail_unless(fabs(value - 250000.0) < 0.051,
+                "pressuredrop should be 250000.0 (2.5 bar), got %f", value);
+
+    /* dive2 has no temperature samples, so the optional element is absent */
+    value = _xpath_double(ctx, "(//*[local-name()='informationafterdive'])[2]/*[local-name()='lowesttemperature']");
+    fail_unless(isnan(value),
+                "dive2 should not emit a lowesttemperature element");
+
+    xmlXPathFreeContext(ctx);
+    xmlFreeDoc(doc);
 }
 END_TEST
 
@@ -447,11 +713,24 @@ dif_suite (void)
 
     TCase *tc_methods = tcase_create("Methods");
     tcase_add_test(tc_methods, test_dif_gasmix_type);
+    tcase_add_test(tc_methods, test_dif_dive_set_avgdepth);
+    tcase_add_test(tc_methods, test_dif_dive_set_tank_pressures);
+    tcase_add_test(tc_methods, test_dif_dive_set_min_temperature);
+    tcase_add_test(tc_methods, test_dif_dive_get_final_pressure);
+    tcase_add_test(tc_methods, test_dif_dive_get_final_pressure_no_pressure);
+    tcase_add_test(tc_methods, test_dif_dive_get_initial_pressure_tank);
+    tcase_add_test(tc_methods, test_dif_dive_pressures_multi_tank);
+    tcase_add_test(tc_methods, test_dif_dive_get_average_depth);
+    tcase_add_test(tc_methods, test_dif_dive_get_average_depth_edge);
+    tcase_add_test(tc_methods, test_dif_dive_get_greatest_depth);
+    tcase_add_test(tc_methods, test_dif_dive_get_lowest_temperature);
+    tcase_add_test(tc_methods, test_dif_dive_get_dive_duration);
     suite_add_tcase(s, tc_methods);
 
     TCase *tc_uddf = tcase_create("UDDF");
     tcase_add_test(tc_uddf, test_dif_save_simple_dive_collection_uddf);
     tcase_add_test(tc_uddf, test_dif_save_dive_collection_uddf);
+    tcase_add_test(tc_uddf, test_dif_uddf_informationafterdive_values);
     suite_add_tcase(s, tc_uddf);
 
     TCase *tc_algos = tcase_create("Algorithms");

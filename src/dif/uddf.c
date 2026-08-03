@@ -12,8 +12,8 @@
 #define UDDF_SCHEMA_LOCATION "http://www.streit.cc/uddf/3.2/ http://www.streit.cc/resources/UDDF/v3.2.3/schema/uddf_3.2.3.xsd"
 
 #define MAX_STRING_LENGTH 100
-#define BAR_TO_PASCAL(a) (a*100000)
-#define CELSIUS_TO_KELVIN(a) (a+273.15)
+#define BAR_TO_PASCAL(a) ((a)*100000)
+#define CELSIUS_TO_KELVIN(a) ((a)+273.15)
 
 /**
  * Child elements of <waypoint> in the exact order required by the
@@ -344,56 +344,59 @@ xmlNodePtr _createDive(dif_dive_t *dive, gchar *diveid, xml_options_t *options) 
     /* create the informationafterdive field */
     xmlNodePtr xmlInformationAfterDive = xmlNewNode(NULL, BAD_CAST "informationafterdive");
 
-    /* create the lowest temperature field */
-    gdouble lowestTemperature = 9999;
-    samples = g_list_first(dive->samples);
-    while (samples != NULL){
-        dif_sample_t *sample = samples->data;
-        dif_subsample_t *subsample = dif_sample_get_subsample(sample, DIF_SAMPLE_TEMPERATURE);
-        if (subsample != NULL && subsample->value.temperature > 0.1 && subsample->value.temperature < lowestTemperature) {
-            lowestTemperature = subsample->value.temperature;
-        }
-        samples = g_list_next(samples);
-    }
-
-    if (lowestTemperature < 9998) {
+    /* create the lowest temperature field, preferring the device-reported value */
+    gdouble lowestTemperature = dive->hasMinTemperature ? dive->minTemperature : dif_dive_get_lowest_temperature(dive);
+    if (lowestTemperature > 0.1) {
         xmlNodePtr xmlLowestTemperature = xmlNewNode(NULL, BAD_CAST "lowesttemperature");
         g_snprintf(tempStr, MAX_STRING_LENGTH, "%0.1f", (double)CELSIUS_TO_KELVIN(lowestTemperature));
         xmlAddChild(xmlLowestTemperature, xmlNewText(BAD_CAST tempStr));
         xmlAddChild(xmlInformationAfterDive, xmlLowestTemperature);
     }
-    xmlAddChild(xmlDive, xmlInformationAfterDive);
 
     /* calculate the greatest depth */
     xmlNodePtr xmlGreatestDepth = xmlNewNode(NULL, BAD_CAST "greatestdepth");
-    gdouble greatestDepth = 0.0;
-    samples = g_list_first(dive->samples);
-    while (samples != NULL) {
-        dif_sample_t *sample = samples->data;
-        dif_subsample_t *subsample = dif_sample_get_subsample(sample, DIF_SAMPLE_DEPTH);
-        if (subsample != NULL && subsample->value.depth > greatestDepth) {
-            greatestDepth = subsample->value.depth;
-        }
-        samples = g_list_next(samples);
-    }
+    gdouble greatestDepth = dif_dive_get_greatest_depth(dive);
     g_snprintf(tempStr, MAX_STRING_LENGTH, "%0.1f", greatestDepth);
     xmlAddChild(xmlGreatestDepth, xmlNewText(BAD_CAST tempStr));
     xmlAddChild(xmlInformationAfterDive, xmlGreatestDepth);
 
     /* create the dive duration field */
     xmlNodePtr xmlDiveDuration = xmlNewNode(NULL, BAD_CAST "diveduration");
-    guint maxtimestamp = 0;
-    samples = g_list_first(dive->samples);
-    while (samples != NULL) {
-        dif_sample_t *sample = samples->data;
-        if (sample->timestamp > maxtimestamp) {
-            maxtimestamp = sample->timestamp;
-        }
-        samples = g_list_next(samples);
-    }
+    guint maxtimestamp = dif_dive_get_dive_duration(dive);
     g_snprintf(tempStr, MAX_STRING_LENGTH, "%0.1f", (gdouble)maxtimestamp);
     xmlAddChild(xmlDiveDuration, xmlNewText(BAD_CAST tempStr));
     xmlAddChild(xmlInformationAfterDive, xmlDiveDuration);
+
+    /* create the average depth field, preferring the device-reported value */
+    gdouble averageDepth = dive->hasAvgdepth ? dive->avgdepth : dif_dive_get_average_depth(dive);
+    if (averageDepth > 0.0) {
+        xmlNodePtr xmlAverageDepth = xmlNewNode(NULL, BAD_CAST "averagedepth");
+        g_snprintf(tempStr, MAX_STRING_LENGTH, "%0.1f", averageDepth);
+        xmlAddChild(xmlAverageDepth, xmlNewText(BAD_CAST tempStr));
+        xmlAddChild(xmlInformationAfterDive, xmlAverageDepth);
+    }
+
+    /* create the pressure drop field, preferring device-reported tank
+     * pressures; the sample fallback pins begin and end to the tank that
+     * produced the first valid reading so multi-tank dives never mix
+     * pressures from different tanks */
+    gdouble beginPressure, endPressure;
+    if (dive->hasTankPressures) {
+        beginPressure = dive->beginPressure;
+        endPressure = dive->endPressure;
+    } else {
+        gint pressureTank = dif_dive_get_initial_pressure_tank(dive);
+        beginPressure = dif_dive_get_initial_pressure(dive, pressureTank);
+        endPressure = dif_dive_get_final_pressure(dive, pressureTank);
+    }
+    if (beginPressure > GAS_EPSILON && endPressure > GAS_EPSILON && beginPressure - endPressure > 0.0) {
+        xmlNodePtr xmlPressureDrop = xmlNewNode(NULL, BAD_CAST "pressuredrop");
+        g_snprintf(tempStr, MAX_STRING_LENGTH, "%0.1f", (double)BAR_TO_PASCAL(beginPressure - endPressure));
+        xmlAddChild(xmlPressureDrop, xmlNewText(BAD_CAST tempStr));
+        xmlAddChild(xmlInformationAfterDive, xmlPressureDrop);
+    }
+
+    xmlAddChild(xmlDive, xmlInformationAfterDive);
 
     g_free(tempStr);
 

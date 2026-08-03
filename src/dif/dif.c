@@ -39,7 +39,16 @@ dif_dive_t *dif_dive_alloc() {
     dive->samples = NULL;
     dive->gasmixes = NULL;
     dive->datetime = NULL;
+    dive->duration = 0;
+    dive->maxdepth = 0.0;
     dive->surfaceInterval = -1;
+    dive->avgdepth = 0.0;
+    dive->hasAvgdepth = FALSE;
+    dive->beginPressure = 0.0;
+    dive->endPressure = 0.0;
+    dive->hasTankPressures = FALSE;
+    dive->minTemperature = 0.0;
+    dive->hasMinTemperature = FALSE;
     dive = dif_dive_set_datetime(dive, 2000,01,01,12,00,00);
     return dive;
 }
@@ -80,6 +89,25 @@ dif_dive_t *dif_dive_set_duration(dif_dive_t *dive, guint duration) {
 
 dif_dive_t *dif_dive_set_maxdepth(dif_dive_t *dive, gdouble maxdepth) {
     dive->maxdepth = maxdepth;
+    return dive;
+}
+
+dif_dive_t *dif_dive_set_avgdepth(dif_dive_t *dive, gdouble avgdepth) {
+    dive->avgdepth = avgdepth;
+    dive->hasAvgdepth = TRUE;
+    return dive;
+}
+
+dif_dive_t *dif_dive_set_tank_pressures(dif_dive_t *dive, gdouble beginPressure, gdouble endPressure) {
+    dive->beginPressure = beginPressure;
+    dive->endPressure = endPressure;
+    dive->hasTankPressures = TRUE;
+    return dive;
+}
+
+dif_dive_t *dif_dive_set_min_temperature(dif_dive_t *dive, gdouble minTemperature) {
+    dive->minTemperature = minTemperature;
+    dive->hasMinTemperature = TRUE;
     return dive;
 }
 
@@ -376,4 +404,159 @@ gdouble dif_dive_get_initial_pressure(dif_dive_t *dive, gint tank) {
         samples = g_list_next(samples);
     }
     return initialPressure;
+}
+
+/**
+ * given a dive, get the tank id of the first valid pressure sample so that
+ * begin and end pressures can be pinned to the same physical tank
+ *
+ * @param dive: the dif_dive_t object
+ * @return: the tank id, or -1 if the dive has no valid pressure samples
+ */
+gint dif_dive_get_initial_pressure_tank(dif_dive_t *dive) {
+    dive = dif_dive_sort_samples(dive);
+    GList *samples = g_list_first(dive->samples);
+    while (samples != NULL) {
+        dif_sample_t *sample = samples->data;
+        dif_subsample_t *subsample = dif_sample_get_subsample(sample, DIF_SAMPLE_PRESSURE);
+        if (subsample != NULL && subsample->value.pressure.value > GAS_EPSILON) {
+            return subsample->value.pressure.tank;
+        }
+        samples = g_list_next(samples);
+    }
+    return -1;
+}
+
+/**
+ * given a dive, get the last valid pressure
+ *
+ * @param dive: the dif_dive_t object
+ * @param tank: the id of the tank to scan for. Using -1 gets the first valid tank
+ * @return: the last valid pressure, or 0.0 if not found
+ */
+gdouble dif_dive_get_final_pressure(dif_dive_t *dive, gint tank) {
+    dive = dif_dive_sort_samples(dive);
+    GList *samples = g_list_last(dive->samples);
+    gdouble finalPressure = 0.0;
+    while (samples != NULL && finalPressure < GAS_EPSILON) {
+        dif_sample_t *sample = samples->data;
+        dif_subsample_t *subsample = dif_sample_get_subsample(sample, DIF_SAMPLE_PRESSURE);
+        if (subsample != NULL) {
+            if ((tank < 0 || subsample->value.pressure.tank == tank) && subsample->value.pressure.value > GAS_EPSILON) {
+                finalPressure = subsample->value.pressure.value;
+            }
+        }
+        samples = g_list_previous(samples);
+    }
+    return finalPressure;
+}
+
+/**
+ * given a dive, compute the time-weighted average depth from the depth
+ * samples using trapezoidal integration over the sample timestamps
+ *
+ * @param dive: the dif_dive_t object
+ * @return: the average depth in meters, or 0.0 if there are no depth samples
+ */
+gdouble dif_dive_get_average_depth(dif_dive_t *dive) {
+    dive = dif_dive_sort_samples(dive);
+    GList *samples = g_list_first(dive->samples);
+    gdouble area = 0.0;
+    gdouble depthSum = 0.0;
+    guint nDepths = 0;
+    gdouble prevDepth = 0.0;
+    guint prevTimestamp = 0;
+    guint firstTimestamp = 0;
+    guint lastTimestamp = 0;
+    while (samples != NULL) {
+        dif_sample_t *sample = samples->data;
+        dif_subsample_t *subsample = dif_sample_get_subsample(sample, DIF_SAMPLE_DEPTH);
+        if (subsample != NULL) {
+            gdouble depth = subsample->value.depth;
+            if (nDepths == 0) {
+                firstTimestamp = sample->timestamp;
+            } else {
+                area += (prevDepth + depth) / 2.0 * (sample->timestamp - prevTimestamp);
+            }
+            lastTimestamp = sample->timestamp;
+            prevDepth = depth;
+            prevTimestamp = sample->timestamp;
+            depthSum += depth;
+            nDepths++;
+        }
+        samples = g_list_next(samples);
+    }
+    if (nDepths == 0) {
+        return 0.0;
+    }
+    if (lastTimestamp == firstTimestamp) {
+        /* single depth sample or zero elapsed time, fall back to a simple mean */
+        return depthSum / nDepths;
+    }
+    return area / (lastTimestamp - firstTimestamp);
+}
+
+/**
+ * given a dive, get the greatest depth recorded in the samples
+ *
+ * @param dive: the dif_dive_t object
+ * @return: the greatest depth in meters, or 0.0 if there are no depth samples
+ */
+gdouble dif_dive_get_greatest_depth(dif_dive_t *dive) {
+    GList *samples = g_list_first(dive->samples);
+    gdouble greatestDepth = 0.0;
+    while (samples != NULL) {
+        dif_sample_t *sample = samples->data;
+        dif_subsample_t *subsample = dif_sample_get_subsample(sample, DIF_SAMPLE_DEPTH);
+        if (subsample != NULL && subsample->value.depth > greatestDepth) {
+            greatestDepth = subsample->value.depth;
+        }
+        samples = g_list_next(samples);
+    }
+    return greatestDepth;
+}
+
+/**
+ * given a dive, get the lowest temperature recorded in the samples.
+ * temperatures at or below 0.1C are treated as missing readings, matching
+ * the historical serialization behavior
+ *
+ * @param dive: the dif_dive_t object
+ * @return: the lowest temperature in Celsius, or 0.0 if there are no
+ *          usable temperature samples
+ */
+gdouble dif_dive_get_lowest_temperature(dif_dive_t *dive) {
+    GList *samples = g_list_first(dive->samples);
+    gdouble lowestTemperature = 9999;
+    while (samples != NULL) {
+        dif_sample_t *sample = samples->data;
+        dif_subsample_t *subsample = dif_sample_get_subsample(sample, DIF_SAMPLE_TEMPERATURE);
+        if (subsample != NULL && subsample->value.temperature > 0.1 && subsample->value.temperature < lowestTemperature) {
+            lowestTemperature = subsample->value.temperature;
+        }
+        samples = g_list_next(samples);
+    }
+    if (lowestTemperature > 9998) {
+        return 0.0;
+    }
+    return lowestTemperature;
+}
+
+/**
+ * given a dive, get the dive duration as the timestamp of the last sample
+ *
+ * @param dive: the dif_dive_t object
+ * @return: the duration in seconds, or 0 if there are no samples
+ */
+guint dif_dive_get_dive_duration(dif_dive_t *dive) {
+    GList *samples = g_list_first(dive->samples);
+    guint maxTimestamp = 0;
+    while (samples != NULL) {
+        dif_sample_t *sample = samples->data;
+        if (sample->timestamp > maxTimestamp) {
+            maxTimestamp = sample->timestamp;
+        }
+        samples = g_list_next(samples);
+    }
+    return maxTimestamp;
 }

@@ -33,6 +33,13 @@ typedef struct dif_dive_t {
     GList *gasmixes;          /**< A list of dif_gasmix_t structures representing gas mixes used */
     GList *samples;           /**< A list of dif_sample_t structures representing dive samples */
     gint surfaceInterval;     /**< Number of seconds since the last dive, -1 if first dive */
+    gdouble avgdepth;         /**< Parser-reported average depth in meters, valid iff hasAvgdepth */
+    gboolean hasAvgdepth;     /**< TRUE when avgdepth was reported by the dive computer */
+    gdouble beginPressure;    /**< Tank begin pressure in bar, valid iff hasTankPressures */
+    gdouble endPressure;      /**< Tank end pressure in bar, valid iff hasTankPressures */
+    gboolean hasTankPressures;/**< TRUE when begin/end pressures were reported by the dive computer */
+    gdouble minTemperature;   /**< Parser-reported minimum temperature in Celsius, valid iff hasMinTemperature */
+    gboolean hasMinTemperature;/**< TRUE when minTemperature was reported by the dive computer */
 } dif_dive_t;
 
 /**
@@ -205,8 +212,17 @@ dif_dive_t *dif_dive_set_datetime(dif_dive_t *dive, guint year, guint month, gui
 dif_dive_t *dif_dive_set_datetime_utc(dif_dive_t *dive, guint year, guint month, guint day, guint hour, guint minute, guint second);
 dif_dive_t *dif_dive_set_duration(dif_dive_t *dive, guint duration);
 dif_dive_t *dif_dive_set_maxdepth(dif_dive_t *dive, gdouble maxdepth);
+dif_dive_t *dif_dive_set_avgdepth(dif_dive_t *dive, gdouble avgdepth);
+dif_dive_t *dif_dive_set_tank_pressures(dif_dive_t *dive, gdouble beginPressure, gdouble endPressure);
+dif_dive_t *dif_dive_set_min_temperature(dif_dive_t *dive, gdouble minTemperature);
 dif_dive_t *dif_dive_sort_samples(dif_dive_t *dive);
 gdouble dif_dive_get_initial_pressure(dif_dive_t *dive, gint tank);
+gint dif_dive_get_initial_pressure_tank(dif_dive_t *dive);
+gdouble dif_dive_get_final_pressure(dif_dive_t *dive, gint tank);
+gdouble dif_dive_get_average_depth(dif_dive_t *dive);
+gdouble dif_dive_get_greatest_depth(dif_dive_t *dive);
+gdouble dif_dive_get_lowest_temperature(dif_dive_t *dive);
+guint dif_dive_get_dive_duration(dif_dive_t *dive);
 dif_gasmix_t *dif_gasmix_alloc();
 void dif_gasmix_free(dif_gasmix_t *gasmix);
 dif_gasmix_type_t dif_gasmix_type(dif_gasmix_t *gasmix);

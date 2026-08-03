@@ -367,6 +367,57 @@ static dc_status_t doparse(dive_data_t *divedata, const unsigned char data[],
   }
   dive = dif_dive_set_maxdepth(dive, maxdepth);
 
+  /* parse the minimum temperature */
+  message("Parsing the minimum temperature.\n");
+  double mintemp = 0.0;
+  rc = dc_parser_get_field(parser, DC_FIELD_TEMPERATURE_MINIMUM, 0, &mintemp);
+  if (rc != DC_STATUS_SUCCESS && rc != DC_STATUS_UNSUPPORTED) {
+    WARNING("Error parsing the minimum temperature.");
+    dc_parser_destroy(parser);
+    return rc;
+  }
+  if (rc == DC_STATUS_SUCCESS) {
+    dive = dif_dive_set_min_temperature(dive, mintemp);
+  }
+
+  /* parse the average depth */
+  message("Parsing the average depth.\n");
+  double avgdepth = 0.0;
+  rc = dc_parser_get_field(parser, DC_FIELD_AVGDEPTH, 0, &avgdepth);
+  if (rc != DC_STATUS_SUCCESS && rc != DC_STATUS_UNSUPPORTED) {
+    WARNING("Error parsing the average depth.");
+    dc_parser_destroy(parser);
+    return rc;
+  }
+  if (rc == DC_STATUS_SUCCESS && avgdepth > 0.0) {
+    dive = dif_dive_set_avgdepth(dive, avgdepth);
+  }
+
+  /* parse the tank pressures */
+  message("Parsing the tank pressures.\n");
+  unsigned int ntanks = 0;
+  rc = dc_parser_get_field(parser, DC_FIELD_TANK_COUNT, 0, &ntanks);
+  if (rc != DC_STATUS_SUCCESS && rc != DC_STATUS_UNSUPPORTED) {
+    WARNING("Error parsing the tank count.");
+    dc_parser_destroy(parser);
+    return rc;
+  }
+
+  for (i = 0; i < ntanks; ++i) {
+    dc_tank_t tank = {0};
+    rc = dc_parser_get_field(parser, DC_FIELD_TANK, i, &tank);
+    if (rc != DC_STATUS_SUCCESS && rc != DC_STATUS_UNSUPPORTED) {
+      WARNING("Error parsing the tank.");
+      dc_parser_destroy(parser);
+      return rc;
+    }
+    /* use the first tank with both a begin and end pressure */
+    if (rc == DC_STATUS_SUCCESS && tank.beginpressure > GAS_EPSILON && tank.endpressure > GAS_EPSILON) {
+      dive = dif_dive_set_tank_pressures(dive, tank.beginpressure, tank.endpressure);
+      break;
+    }
+  }
+
   /* parse the gas mixes */
   message("Parsing the gas mixes.\n");
   unsigned int ngases = 0;
