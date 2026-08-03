@@ -7,6 +7,7 @@
 #include <libxml/xpath.h>
 #include "dif/dif.h"
 #include "dumpfile.h"
+#include "uwatec_smart_alarms.h"
 
 /**
  * helper function to create a couple of dives for testing of algorithms
@@ -693,6 +694,347 @@ START_TEST (test_dumpfile_empty)
 }
 END_TEST
 
+START_TEST (test_dif_alarm_type_name)
+{
+    /* the tokens must match the UDDF 3.2.3 alarmType enumeration exactly */
+    fail_unless(strcmp(dif_alarm_type_name(DIF_ALARM_ASCENT), "ascent") == 0);
+    fail_unless(strcmp(dif_alarm_type_name(DIF_ALARM_BREATH), "breath") == 0);
+    fail_unless(strcmp(dif_alarm_type_name(DIF_ALARM_DECO), "deco") == 0);
+    fail_unless(strcmp(dif_alarm_type_name(DIF_ALARM_ERROR), "error") == 0);
+    fail_unless(strcmp(dif_alarm_type_name(DIF_ALARM_LINK), "link") == 0);
+    fail_unless(strcmp(dif_alarm_type_name(DIF_ALARM_MICROBUBBLES), "microbubbles") == 0);
+    fail_unless(strcmp(dif_alarm_type_name(DIF_ALARM_RBT), "rbt") == 0);
+    fail_unless(strcmp(dif_alarm_type_name(DIF_ALARM_SKINCOOLING), "skincooling") == 0);
+    fail_unless(strcmp(dif_alarm_type_name(DIF_ALARM_SURFACE), "surface") == 0);
+    fail_unless(dif_alarm_type_name((dif_alarm_type_t) 99) == NULL,
+                "out-of-range alarm types should return NULL");
+}
+END_TEST
+
+START_TEST (test_dif_sample_event_to_alarm)
+{
+    dif_alarm_type_t alarm;
+    fail_unless(dif_sample_event_to_alarm(DIF_SAMPLE_EVENT_ASCENT, &alarm) &&
+                alarm == DIF_ALARM_ASCENT, "ASCENT should map to ascent");
+    fail_unless(dif_sample_event_to_alarm(DIF_SAMPLE_EVENT_DECOSTOP, &alarm) &&
+                alarm == DIF_ALARM_DECO, "DECOSTOP should map to deco");
+    fail_unless(dif_sample_event_to_alarm(DIF_SAMPLE_EVENT_VIOLATION, &alarm) &&
+                alarm == DIF_ALARM_DECO, "VIOLATION should map to deco");
+    fail_unless(dif_sample_event_to_alarm(DIF_SAMPLE_EVENT_CEILING, &alarm) &&
+                alarm == DIF_ALARM_ERROR, "CEILING should map to error");
+    fail_unless(dif_sample_event_to_alarm(DIF_SAMPLE_EVENT_CEILING_SAFETYSTOP, &alarm) &&
+                alarm == DIF_ALARM_ERROR, "CEILING_SAFETYSTOP should map to error");
+    fail_unless(dif_sample_event_to_alarm(DIF_SAMPLE_EVENT_UNKNOWN, &alarm) &&
+                alarm == DIF_ALARM_ERROR, "UNKNOWN should map to error");
+    fail_unless(dif_sample_event_to_alarm(DIF_SAMPLE_EVENT_RBT, &alarm) &&
+                alarm == DIF_ALARM_RBT, "RBT should map to rbt");
+    fail_unless(dif_sample_event_to_alarm(DIF_SAMPLE_EVENT_DIVETIME, &alarm) &&
+                alarm == DIF_ALARM_RBT, "DIVETIME should map to rbt");
+    fail_unless(dif_sample_event_to_alarm(DIF_SAMPLE_EVENT_SURFACE, &alarm) &&
+                alarm == DIF_ALARM_SURFACE, "SURFACE should map to surface");
+    fail_unless(dif_sample_event_to_alarm(DIF_SAMPLE_EVENT_TRANSMITTER, &alarm) &&
+                alarm == DIF_ALARM_LINK, "TRANSMITTER should map to link");
+
+    /* bookmark becomes <setmarker>, informational events don't map at all */
+    fail_unless(!dif_sample_event_to_alarm(DIF_SAMPLE_EVENT_BOOKMARK, &alarm),
+                "BOOKMARK must not map to an alarm");
+    fail_unless(!dif_sample_event_to_alarm(DIF_SAMPLE_EVENT_NONE, &alarm));
+    fail_unless(!dif_sample_event_to_alarm(DIF_SAMPLE_EVENT_WORKLOAD, &alarm));
+    fail_unless(!dif_sample_event_to_alarm(DIF_SAMPLE_EVENT_GASCHANGE, &alarm));
+    fail_unless(!dif_sample_event_to_alarm(DIF_SAMPLE_EVENT_SAFETYSTOP, &alarm));
+    fail_unless(!dif_sample_event_to_alarm(DIF_SAMPLE_EVENT_HEADING, &alarm));
+    fail_unless(!dif_sample_event_to_alarm(DIF_SAMPLE_EVENT_PO2, &alarm));
+    fail_unless(!dif_sample_event_to_alarm(DIF_SAMPLE_EVENT_NDL, &alarm));
+}
+END_TEST
+
+START_TEST (test_dif_dive_add_alarm)
+{
+    dif_dive_t *dive = dif_dive_alloc();
+    dif_sample_t *sample = dif_sample_alloc();
+    sample->timestamp = 60;
+    dive = dif_dive_add_sample(dive, sample);
+
+    /* merging into the existing sample at the same timestamp */
+    dive = dif_dive_add_alarm(dive, 60, DIF_ALARM_ERROR, 2.0, TRUE);
+    fail_unless(g_list_length(dive->samples) == 1,
+                "alarm at an existing timestamp should not create a sample");
+    dif_subsample_t *ss = dif_sample_get_subsample(sample, DIF_SAMPLE_ALARM);
+    fail_unless(ss != NULL, "sample at t=60 should have an alarm subsample");
+    fail_unless(ss->value.alarm.type == DIF_ALARM_ERROR);
+    fail_unless(ss->value.alarm.hasLevel && fabs(ss->value.alarm.level - 2.0) < 1e-9);
+
+    /* creating a new sample at an unseen timestamp */
+    dive = dif_dive_add_alarm(dive, 90, DIF_ALARM_ASCENT, 0.0, FALSE);
+    fail_unless(g_list_length(dive->samples) == 2,
+                "alarm at a new timestamp should create a sample");
+    dif_sample_t *created = dif_dive_find_sample(dive, 90);
+    fail_unless(created != NULL, "the created sample should be findable");
+    ss = dif_sample_get_subsample(created, DIF_SAMPLE_ALARM);
+    fail_unless(ss != NULL && ss->value.alarm.type == DIF_ALARM_ASCENT &&
+                !ss->value.alarm.hasLevel);
+
+    fail_unless(dif_dive_find_sample(dive, 61) == NULL,
+                "find_sample must match timestamps exactly");
+    dif_dive_free(dive);
+}
+END_TEST
+
+START_TEST (test_dif_subsample_vendor_deep_copy)
+{
+    guint8 payload[4] = {0xDE, 0xAD, 0xBE, 0xEF};
+    dif_subsample_t *ss = dif_subsample_alloc();
+    ss = dif_subsample_set_vendor(ss, 2, sizeof(payload), payload);
+
+    /* clobber the original buffer; the subsample must hold its own copy */
+    memset(payload, 0, sizeof(payload));
+    fail_unless(ss->type == DIF_SAMPLE_VENDOR);
+    fail_unless(ss->value.vendor.size == 4);
+    fail_unless(((guint8 *) ss->value.vendor.data)[0] == 0xDE &&
+                ((guint8 *) ss->value.vendor.data)[3] == 0xEF,
+                "vendor data should be a deep copy, not a pointer");
+    dif_subsample_free(ss);
+
+    /* empty payloads should be safe to set and free */
+    ss = dif_subsample_alloc();
+    ss = dif_subsample_set_vendor(ss, 2, 0, NULL);
+    fail_unless(ss->value.vendor.data == NULL);
+    dif_subsample_free(ss);
+}
+END_TEST
+
+/**
+ * helper: number of nodes matching an xpath expression
+ */
+static gint _xpath_count(xmlXPathContextPtr ctx, const gchar *expr) {
+    gint count = -1;
+    xmlXPathObjectPtr obj = xmlXPathEvalExpression(BAD_CAST expr, ctx);
+    if (obj != NULL && obj->nodesetval != NULL) {
+        count = obj->nodesetval->nodeNr;
+    } else if (obj != NULL) {
+        count = 0;
+    }
+    if (obj != NULL) {
+        xmlXPathFreeObject(obj);
+    }
+    return count;
+}
+
+/**
+ * helper: content of the first node matching an xpath expression, or NULL;
+ * caller frees with g_free
+ */
+static gchar *_xpath_string(xmlXPathContextPtr ctx, const gchar *expr) {
+    gchar *result = NULL;
+    xmlXPathObjectPtr obj = xmlXPathEvalExpression(BAD_CAST expr, ctx);
+    if (obj != NULL && obj->nodesetval != NULL && obj->nodesetval->nodeNr > 0) {
+        xmlChar *content = xmlNodeGetContent(obj->nodesetval->nodeTab[0]);
+        if (content != NULL) {
+            result = g_strdup((const gchar *) content);
+            xmlFree(content);
+        }
+    }
+    if (obj != NULL) {
+        xmlXPathFreeObject(obj);
+    }
+    return result;
+}
+
+START_TEST (test_dif_uddf_alarm_emission)
+{
+    dif_dive_collection_t *dc = dif_dive_collection_alloc();
+    dif_dive_t *dive = dif_dive_alloc();
+    dc = dif_dive_collection_add_dive(dc, dive);
+
+    /* one plain sample with a depth so the waypoint has multiple children */
+    dif_sample_t *sample = dif_sample_alloc();
+    sample->timestamp = 0;
+    dif_subsample_t *ssdepth = dif_subsample_alloc();
+    ssdepth->type = DIF_SAMPLE_DEPTH;
+    ssdepth->value.depth = 10.0;
+    dif_sample_add_subsample(sample, ssdepth);
+
+    /* a bookmark event and an alarm-mapping event on the same sample */
+    dif_subsample_t *ssbookmark = dif_subsample_alloc();
+    ssbookmark->type = DIF_SAMPLE_EVENT;
+    ssbookmark->value.event.type = DIF_SAMPLE_EVENT_BOOKMARK;
+    dif_sample_add_subsample(sample, ssbookmark);
+    dif_subsample_t *ssascent = dif_subsample_alloc();
+    ssascent->type = DIF_SAMPLE_EVENT;
+    ssascent->value.event.type = DIF_SAMPLE_EVENT_ASCENT;
+    dif_sample_add_subsample(sample, ssascent);
+    dive = dif_dive_add_sample(dive, sample);
+
+    /* a leveled alarm merged into the existing sample, and a level-less
+     * alarm on its own new sample */
+    dive = dif_dive_add_alarm(dive, 0, DIF_ALARM_ERROR, 2.0, TRUE);
+    dive = dif_dive_add_alarm(dive, 30, DIF_ALARM_DECO, 0.0, FALSE);
+
+    dif_save_dive_collection_uddf(dc, "test_alarms.uddf");
+    dif_dive_collection_free(dc);
+
+    xmlDocPtr doc = xmlReadFile("test_alarms.uddf", NULL, 0);
+    fail_unless(doc != NULL, "could not parse test_alarms.uddf");
+    xmlXPathContextPtr ctx = xmlXPathNewContext(doc);
+    fail_unless(ctx != NULL, "could not create xpath context");
+
+    /* waypoint 1: ascent alarm (from the event), error alarm with level=2,
+     * bookmark setmarker; alarm must be the first waypoint child */
+    fail_unless(_xpath_count(ctx, "(//*[local-name()='waypoint'])[1]/*[local-name()='alarm']") == 2,
+                "waypoint 1 should have two alarms");
+    fail_unless(_xpath_count(ctx, "(//*[local-name()='waypoint'])[1]/*[local-name()='alarm' and @level='2']") == 1,
+                "waypoint 1 should have one alarm with level=2");
+    gchar *text = _xpath_string(ctx, "(//*[local-name()='waypoint'])[1]/*[local-name()='alarm' and @level='2']");
+    fail_unless(text != NULL && strcmp(text, "error") == 0,
+                "the leveled alarm should be 'error', got '%s'", text);
+    g_free(text);
+    text = _xpath_string(ctx, "(//*[local-name()='waypoint'])[1]/*[local-name()='alarm' and not(@level)]");
+    fail_unless(text != NULL && strcmp(text, "ascent") == 0,
+                "the ASCENT event should emit an 'ascent' alarm, got '%s'", text);
+    g_free(text);
+    text = _xpath_string(ctx, "(//*[local-name()='waypoint'])[1]/*[local-name()='setmarker']");
+    fail_unless(text != NULL && strcmp(text, "bookmark") == 0,
+                "the BOOKMARK event should emit <setmarker>bookmark</setmarker>");
+    g_free(text);
+    fail_unless(_xpath_count(ctx, "(//*[local-name()='waypoint'])[1]/*[1][local-name()='alarm']") == 1,
+                "alarm should be the first child of the waypoint");
+
+    /* waypoint 2: the level-less deco alarm on its own sample */
+    text = _xpath_string(ctx, "(//*[local-name()='waypoint'])[2]/*[local-name()='alarm']");
+    fail_unless(text != NULL && strcmp(text, "deco") == 0,
+                "waypoint 2 should carry the deco alarm");
+    g_free(text);
+
+    /* without --invalid there must be no debug <event> elements */
+    fail_unless(_xpath_count(ctx, "//*[local-name()='event']") == 0,
+                "no <event> elements should be emitted without --invalid");
+
+    xmlXPathFreeContext(ctx);
+    xmlFreeDoc(doc);
+}
+END_TEST
+
+/**
+ * helper to build a minimal Galileo dive record: 152-byte zeroed header
+ * (framing included, non-trimix, settings zero => 4 s interval) followed
+ * by the given sample bytes
+ */
+static gsize _galileo_record(guint8 *buf, const guint8 *samples, gsize nsamples) {
+    memset(buf, 0, 152);
+    buf[0] = 0xA5; buf[1] = 0xA5; buf[2] = 0x5A; buf[3] = 0x5A;
+    guint32 length = 152 + nsamples;
+    buf[4] = length & 0xFF;
+    buf[5] = (length >> 8) & 0xFF;
+    buf[6] = (length >> 16) & 0xFF;
+    buf[7] = (length >> 24) & 0xFF;
+    memcpy(buf + 152, samples, nsamples);
+    return length;
+}
+
+START_TEST (test_uwatec_alarms_decode_warning_and_alarm)
+{
+    /* 0x00       delta-depth sample -> waypoint t=0 (no alarms yet)
+     * 0xE1       events sample, warning bit set
+     * 0x00       -> waypoint t=4 with warning
+     * 0xE2       events sample, alarm bit set (warning cleared)
+     * 0x00       -> waypoint t=8 with alarm
+     * 0xE0       events sample, all bits cleared
+     * 0x00       -> waypoint t=12, nothing reported */
+    const guint8 samples[] = {0x00, 0xE1, 0x00, 0xE2, 0x00, 0xE0, 0x00};
+    guint8 buf[256];
+    gsize len = _galileo_record(buf, samples, sizeof(samples));
+
+    GError *err = NULL;
+    GArray *events = uwatec_smart_alarms_decode(buf, len, 0x11, &err);
+    fail_unless(events != NULL, "decode failed: %s", err ? err->message : "");
+    fail_unless(events->len == 2, "expected 2 alarm events, got %u", events->len);
+    uwatec_alarm_event_t *ev = &g_array_index(events, uwatec_alarm_event_t, 0);
+    fail_unless(ev->timestamp == 4 && ev->alarms == UWATEC_ALARM_WARNING,
+                "event 0 should be a warning at t=4 (got t=%u alarms=0x%02X)",
+                ev->timestamp, ev->alarms);
+    ev = &g_array_index(events, uwatec_alarm_event_t, 1);
+    fail_unless(ev->timestamp == 8 && ev->alarms == UWATEC_ALARM_ALARM,
+                "event 1 should be an alarm at t=8 (got t=%u alarms=0x%02X)",
+                ev->timestamp, ev->alarms);
+    g_array_free(events, TRUE);
+}
+END_TEST
+
+START_TEST (test_uwatec_alarms_decode_time_sample)
+{
+    /* alarm state persists across a TIME sample's repeated waypoints:
+     * 0x00        -> waypoint t=0
+     * 0xE1        warning on
+     * 0xC3        TIME: three unchanged waypoints t=4, t=8, t=12
+     * 0xE0        warning off
+     * 0x00        -> waypoint t=16, nothing */
+    const guint8 samples[] = {0x00, 0xE1, 0xC3, 0xE0, 0x00};
+    guint8 buf[256];
+    gsize len = _galileo_record(buf, samples, sizeof(samples));
+
+    GError *err = NULL;
+    GArray *events = uwatec_smart_alarms_decode(buf, len, 0x11, &err);
+    fail_unless(events != NULL, "decode failed: %s", err ? err->message : "");
+    fail_unless(events->len == 3, "expected 3 alarm events, got %u", events->len);
+    guint i;
+    for (i = 0; i < events->len; i++) {
+        uwatec_alarm_event_t *ev = &g_array_index(events, uwatec_alarm_event_t, i);
+        fail_unless(ev->timestamp == (i + 1) * 4 && ev->alarms == UWATEC_ALARM_WARNING,
+                    "event %u should be a warning at t=%u (got t=%u alarms=0x%02X)",
+                    i, (i + 1) * 4, ev->timestamp, ev->alarms);
+    }
+    g_array_free(events, TRUE);
+}
+END_TEST
+
+START_TEST (test_uwatec_alarms_decode_errors)
+{
+    guint8 buf[256];
+    GError *err = NULL;
+
+    /* unsupported model (Aladin Tec uses a different bitstream) */
+    gsize len = _galileo_record(buf, NULL, 0);
+    GArray *events = uwatec_smart_alarms_decode(buf, len, 0x12, &err);
+    fail_unless(events == NULL && err != NULL &&
+                err->code == UWATEC_SMART_ALARMS_ERROR_UNSUPPORTED_MODEL,
+                "model 0x12 should be rejected as unsupported");
+    g_clear_error(&err);
+
+    /* record shorter than the header */
+    events = uwatec_smart_alarms_decode(buf, 20, 0x11, &err);
+    fail_unless(events == NULL && err != NULL &&
+                err->code == UWATEC_SMART_ALARMS_ERROR_TRUNCATED,
+                "a 20-byte record should be rejected as truncated");
+    g_clear_error(&err);
+
+    /* invalid type bits: 0xFF maps past the end of the sample table */
+    const guint8 badtype[] = {0xFF};
+    len = _galileo_record(buf, badtype, sizeof(badtype));
+    events = uwatec_smart_alarms_decode(buf, len, 0x11, &err);
+    fail_unless(events == NULL && err != NULL &&
+                err->code == UWATEC_SMART_ALARMS_ERROR_INVALID_DATA,
+                "type bits 0xFF should be rejected as invalid");
+    g_clear_error(&err);
+
+    /* absolute-depth sample (1111 0001) that claims two extra bytes but
+     * the record ends first */
+    const guint8 truncated[] = {0xF1, 0x01};
+    len = _galileo_record(buf, truncated, sizeof(truncated));
+    events = uwatec_smart_alarms_decode(buf, len, 0x11, &err);
+    fail_unless(events == NULL && err != NULL &&
+                err->code == UWATEC_SMART_ALARMS_ERROR_TRUNCATED,
+                "a truncated sample should be rejected");
+    g_clear_error(&err);
+
+    /* an empty profile is fine: no samples, no alarms */
+    len = _galileo_record(buf, NULL, 0);
+    events = uwatec_smart_alarms_decode(buf, len, 0x11, &err);
+    fail_unless(events != NULL && events->len == 0 && err == NULL,
+                "an empty profile should decode to zero alarms");
+    g_array_free(events, TRUE);
+}
+END_TEST
+
 Suite *
 dif_suite (void)
 {
@@ -731,7 +1073,18 @@ dif_suite (void)
     tcase_add_test(tc_uddf, test_dif_save_simple_dive_collection_uddf);
     tcase_add_test(tc_uddf, test_dif_save_dive_collection_uddf);
     tcase_add_test(tc_uddf, test_dif_uddf_informationafterdive_values);
+    tcase_add_test(tc_uddf, test_dif_uddf_alarm_emission);
     suite_add_tcase(s, tc_uddf);
+
+    TCase *tc_alarms = tcase_create("Alarms");
+    tcase_add_test(tc_alarms, test_dif_alarm_type_name);
+    tcase_add_test(tc_alarms, test_dif_sample_event_to_alarm);
+    tcase_add_test(tc_alarms, test_dif_dive_add_alarm);
+    tcase_add_test(tc_alarms, test_dif_subsample_vendor_deep_copy);
+    tcase_add_test(tc_alarms, test_uwatec_alarms_decode_warning_and_alarm);
+    tcase_add_test(tc_alarms, test_uwatec_alarms_decode_time_sample);
+    tcase_add_test(tc_alarms, test_uwatec_alarms_decode_errors);
+    suite_add_tcase(s, tc_alarms);
 
     TCase *tc_algos = tcase_create("Algorithms");
     tcase_add_test(tc_algos, test_dif_alg_dc_initial_pressure_fix);

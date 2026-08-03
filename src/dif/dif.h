@@ -98,8 +98,29 @@ typedef enum dif_sample_type_t {
     DIF_SAMPLE_RBT,          /**< Remaining bottom time sample */
     DIF_SAMPLE_HEARTBEAT,    /**< Heart rate sample */
     DIF_SAMPLE_BEARING,      /**< Compass bearing sample */
-    DIF_SAMPLE_VENDOR        /**< Vendor specific sample */
+    DIF_SAMPLE_VENDOR,       /**< Vendor specific sample */
+    DIF_SAMPLE_ALARM,        /**< UDDF alarm (schema alarmType token + optional level) */
+    DIF_SAMPLE_SETMARKER     /**< UDDF setmarker (free-text waypoint marker, e.g. bookmark) */
 } dif_sample_type_t;
+
+/**
+ * @brief UDDF alarm kinds
+ *
+ * Mirrors the alarmType enumeration in the UDDF 3.2.3 schema exactly; the
+ * serializer emits these as the element text of <alarm>. The schema allows
+ * no other values.
+ */
+typedef enum dif_alarm_type_t {
+    DIF_ALARM_ASCENT,        /**< Ascent rate too fast */
+    DIF_ALARM_BREATH,        /**< Breathing rate warning */
+    DIF_ALARM_DECO,          /**< Decompression violation/obligation */
+    DIF_ALARM_ERROR,         /**< Generic error/warning (cause unknown) */
+    DIF_ALARM_LINK,          /**< Transmitter link lost */
+    DIF_ALARM_MICROBUBBLES,  /**< Microbubble warning */
+    DIF_ALARM_RBT,           /**< Remaining bottom time warning */
+    DIF_ALARM_SKINCOOLING,   /**< Skin cooling warning */
+    DIF_ALARM_SURFACE        /**< Surfaced / surface warning */
+} dif_alarm_type_t;
 
 /**
  * @brief Types of events that can occur during a dive
@@ -162,8 +183,14 @@ typedef union dif_sample_value_t {
     struct {
         guint type;             /**< Vendor-specific type */
         guint size;             /**< Size of vendor data */
-        const void *data;        /**< Pointer to vendor-specific data */
+        gpointer data;          /**< Owned copy of vendor-specific data (freed by dif_subsample_free) */
     } vendor;
+    struct {
+        dif_alarm_type_t type;  /**< UDDF alarm kind */
+        gdouble level;          /**< Alarm level/severity, valid iff hasLevel */
+        gboolean hasLevel;      /**< TRUE to emit the optional level attribute */
+    } alarm;
+    gchar *setmarker;            /**< Owned marker text (freed by dif_subsample_free) */
 } dif_sample_value_t;
 
 /**
@@ -234,6 +261,11 @@ dif_sample_t *dif_sample_add_subsample(dif_sample_t *sample, dif_subsample_t *su
 dif_subsample_t *dif_sample_get_subsample(dif_sample_t *sample, dif_sample_type_t sampleType);
 dif_subsample_t *dif_subsample_alloc();
 void dif_subsample_free(dif_subsample_t *subsample);
+dif_subsample_t *dif_subsample_set_vendor(dif_subsample_t *subsample, guint type, guint size, gconstpointer data);
+const gchar *dif_alarm_type_name(dif_alarm_type_t type);
+gboolean dif_sample_event_to_alarm(dif_sample_event_t event, dif_alarm_type_t *alarm);
+dif_sample_t *dif_dive_find_sample(dif_dive_t *dive, guint timestamp);
+dif_dive_t *dif_dive_add_alarm(dif_dive_t *dive, guint timestamp, dif_alarm_type_t type, gdouble level, gboolean hasLevel);
 
 /* uddf.c */
 xml_options_t *dif_xml_options_alloc();

@@ -29,6 +29,7 @@
 
 #include "dif/dif.h"
 #include "dumpfile.h"
+#include "uwatec_smart_alarms.h"
 #include "utils.h"
 
 static const char *g_cachedir = NULL;
@@ -283,10 +284,8 @@ void sample_cb(dc_sample_type_t type, const dc_sample_value_t *value,
     break;
   case DC_SAMPLE_VENDOR:
     subsample = dif_subsample_alloc();
-    subsample->type = DIF_SAMPLE_VENDOR;
-    subsample->value.vendor.type = value->vendor.type;
-    subsample->value.vendor.size = value->vendor.size;
-    subsample->value.vendor.data = value->vendor.data;
+    dif_subsample_set_vendor(subsample, value->vendor.type,
+                             value->vendor.size, value->vendor.data);
     sample = dif_sample_add_subsample(sample, subsample);
     break;
   default:
@@ -466,6 +465,48 @@ static dc_status_t doparse(dive_data_t *divedata, const unsigned char data[],
   }
 
   g_free(cbdata);
+
+  /* Recover the Uwatec warning/alarm buzzer bits. libdivecomputer decodes
+   * them but drops them before the sample callback (see
+   * uwatec_smart_alarms.h), so re-walk the raw record ourselves. The
+   * device only records that a warning (yellow buzzer) or alarm (red
+   * buzzer) sounded, not why, so they map to the UDDF "error" alarm with
+   * level 1 (warning) or 2 (alarm). */
+  if (dc_descriptor_get_type(divedata->descriptor) == DC_FAMILY_UWATEC_SMART) {
+    GError *alarmError = NULL;
+    GArray *alarms = uwatec_smart_alarms_decode(
+        data, size, dc_descriptor_get_model(divedata->descriptor),
+        &alarmError);
+    if (alarms != NULL) {
+      guint nwarnings = 0, nalarms = 0;
+      for (i = 0; i < alarms->len; ++i) {
+        uwatec_alarm_event_t *event =
+            &g_array_index(alarms, uwatec_alarm_event_t, i);
+        /* when both bits are set only the alarm is emitted: a red alarm
+         * subsumes the yellow warning at the same instant */
+        if (event->alarms & UWATEC_ALARM_ALARM) {
+          dive = dif_dive_add_alarm(dive, event->timestamp, DIF_ALARM_ERROR,
+                                    2.0, TRUE);
+          nalarms++;
+        } else if (event->alarms & UWATEC_ALARM_WARNING) {
+          dive = dif_dive_add_alarm(dive, event->timestamp, DIF_ALARM_ERROR,
+                                    1.0, TRUE);
+          nwarnings++;
+        }
+        /* UWATEC_ALARM_WORKLOAD_WARNING is intentionally skipped: it is
+         * informational (lung symbol) and no UDDF alarm token fits */
+      }
+      if (nwarnings > 0 || nalarms > 0) {
+        message("Decoded Uwatec alarm bits: %u warning, %u alarm samples.\n",
+                nwarnings, nalarms);
+      }
+      g_array_free(alarms, TRUE);
+    } else {
+      message("Uwatec alarm decoding skipped: %s\n",
+              alarmError != NULL ? alarmError->message : "unknown error");
+      g_clear_error(&alarmError);
+    }
+  }
 
   /* destroy the parser */
   message("Destroying the parser.\n");

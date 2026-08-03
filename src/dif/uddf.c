@@ -143,6 +143,9 @@ xmlNodePtr _createWaypoint(dif_sample_t *sample, xml_options_t *options) {
         "gaschange2", "ndl"};
 
     GList *xmlSubsamples= NULL;
+    /* the schema allows at most one <setmarker> per waypoint (unlike
+     * <alarm>, which is unbounded) */
+    gboolean haveSetmarker = FALSE;
 
     xmlNodePtr xmlWaypoint = xmlNewNode(NULL, BAD_CAST "waypoint");
 
@@ -180,7 +183,22 @@ xmlNodePtr _createWaypoint(dif_sample_t *sample, xml_options_t *options) {
             xmlAddChild(xmlTemperature, xmlNewText(BAD_CAST nodeText));
             xmlSubsamples = g_list_append(xmlSubsamples, xmlTemperature);
             break;
-        case DIF_SAMPLE_EVENT:
+        case DIF_SAMPLE_EVENT: {
+            /* schema-valid output first: bookmarks become <setmarker>,
+             * alarm-like events become <alarm> (see dif_sample_event_to_alarm) */
+            dif_alarm_type_t alarmType;
+            if (ss->value.event.type == DIF_SAMPLE_EVENT_BOOKMARK) {
+                if (!haveSetmarker) {
+                    xmlNodePtr xmlSetmarker = xmlNewNode(NULL, BAD_CAST "setmarker");
+                    xmlAddChild(xmlSetmarker, xmlNewText(BAD_CAST "bookmark"));
+                    xmlSubsamples = g_list_append(xmlSubsamples, xmlSetmarker);
+                    haveSetmarker = TRUE;
+                }
+            } else if (dif_sample_event_to_alarm(ss->value.event.type, &alarmType)) {
+                xmlNodePtr xmlAlarm = xmlNewNode(NULL, BAD_CAST "alarm");
+                xmlAddChild(xmlAlarm, xmlNewText(BAD_CAST dif_alarm_type_name(alarmType)));
+                xmlSubsamples = g_list_append(xmlSubsamples, xmlAlarm);
+            }
             if (options->useInvalidElements) {
                 // WARNING: the event tag is NOT part of UDDF, however there are cases when
                 // it might be desirable to save these events for debugging and validation.
@@ -197,10 +215,29 @@ xmlNodePtr _createWaypoint(dif_sample_t *sample, xml_options_t *options) {
                 xmlNewProp(xmlEvent, BAD_CAST "flags", BAD_CAST nodeText);
                 g_snprintf(nodeText, MAX_STRING_LENGTH, "%u", ss->value.event.value);
                 xmlNewProp(xmlEvent, BAD_CAST "value", BAD_CAST nodeText);
-                xmlAddChild(xmlEvent, xmlNewText(BAD_CAST events[ss->value.event.type]));
+                xmlAddChild(xmlEvent, xmlNewText(BAD_CAST (
+                    ss->value.event.type < G_N_ELEMENTS(events)
+                        ? events[ss->value.event.type] : "out-of-range")));
                 xmlSubsamples = g_list_append(xmlSubsamples, xmlEvent);
-            } else {
-                printf("** Received an EVENT that isn't part of the schema. To dump this event please set xml_options_t->useInvalidElements to TRUE\n");
+            }
+            break;
+        }
+        case DIF_SAMPLE_ALARM: {
+            xmlNodePtr xmlAlarm = xmlNewNode(NULL, BAD_CAST "alarm");
+            if (ss->value.alarm.hasLevel) {
+                g_snprintf(nodeText, MAX_STRING_LENGTH, "%g", ss->value.alarm.level);
+                xmlNewProp(xmlAlarm, BAD_CAST "level", BAD_CAST nodeText);
+            }
+            xmlAddChild(xmlAlarm, xmlNewText(BAD_CAST dif_alarm_type_name(ss->value.alarm.type)));
+            xmlSubsamples = g_list_append(xmlSubsamples, xmlAlarm);
+            break;
+        }
+        case DIF_SAMPLE_SETMARKER:
+            if (!haveSetmarker && ss->value.setmarker != NULL) {
+                xmlNodePtr xmlSetmarker = xmlNewNode(NULL, BAD_CAST "setmarker");
+                xmlAddChild(xmlSetmarker, xmlNewText(BAD_CAST ss->value.setmarker));
+                xmlSubsamples = g_list_append(xmlSubsamples, xmlSetmarker);
+                haveSetmarker = TRUE;
             }
             break;
         case DIF_SAMPLE_RBT:

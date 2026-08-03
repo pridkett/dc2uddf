@@ -204,6 +204,28 @@ the device *descriptor by product name*. Give the exact product name (see
 model produces "Invalid type bits" parse errors. Dump files use the Uwatec
 Smart record framing and are compatible with dumps produced by dctool.
 
+Alarms
+------
+
+Dive computer events that libdivecomputer reports (ascent-rate warnings, deco
+violations, remaining-bottom-time warnings, surfacing, transmitter-link loss)
+are written as schema-valid UDDF `<alarm>` elements on the waypoint where
+they occurred, following the same mapping Subsurface uses (ascent&rarr;`ascent`,
+deco stop/violation&rarr;`deco`, RBT/divetime&rarr;`rbt`, surface&rarr;`surface`,
+ceiling/unknown&rarr;`error`, transmitter&rarr;`link`). Bookmarks become the
+waypoint's `<setmarker>` element.
+
+Uwatec Smart-family devices additionally record generic warning (yellow
+buzzer) and alarm (red buzzer) bits with every sample. libdivecomputer
+(through at least 0.9) decodes these internally but drops them before the
+sample callback, so dc2uddf re-decodes them directly from the raw dive
+record (`src/uwatec_smart_alarms.c`, Galileo-bitstream models only) and
+emits them as `<alarm level="1">error</alarm>` (warning) and
+`<alarm level="2">error</alarm>` (alarm). The device does not record *why*
+the buzzer sounded, hence the generic `error` token. The long-term fix is an
+upstream libdivecomputer patch that emits EV_WARNING/EV_ALARM as
+`SAMPLE_EVENT`s, at which point the native decoder can be removed.
+
 Additional Arguments
 ====================
 

@@ -11,7 +11,8 @@ AC_PROG_CC
 AM_PROG_CC_C_O
 PKG_CHECK_MODULES(XML, libxml-2.0 >= 2.4)
 PKG_CHECK_MODULES(DIVECOMPUTER, libdivecomputer >= 0.9)
-PKG_CHECK_MODULES(GLIB, glib-2.0 > 2.0)
+dnl glib >= 2.68 for g_memdup2
+PKG_CHECK_MODULES(GLIB, glib-2.0 >= 2.68)
 PKG_CHECK_MODULES(CHECK, check >= 0.9.8)
 AC_CONFIG_FILES(Makefile src/Makefile)
 AC_OUTPUT

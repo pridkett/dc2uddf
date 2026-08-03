@@ -24,9 +24,18 @@ Diving Log, etc.).
 - `src/dumpfile.c` / `dumpfile.h` — splits on-disk dive-data dumps into
   individual records (Uwatec Smart framing). glib-only, no libdivecomputer
   dependency, so it's unit-testable in `check_dif`.
-- `src/tests/check_dif.c` — Check-framework tests; write `test_simple.uddf`
-  and `test.uddf`, which `make check` validates against the schema with
-  xmllint.
+- `src/uwatec_smart_alarms.c` / `.h` — decodes the warning/alarm buzzer bits
+  from raw Uwatec dive records (Galileo-bitstream models only); the sample
+  walk is a port of upstream v0.9.0 `uwatec_smart_parser.c`, which decodes
+  but *drops* EV_WARNING/EV_ALARM before the sample callback (remove this
+  module if upstream ever emits them as SAMPLE_EVENTs). glib-only,
+  unit-testable in `check_dif`. Emitted as UDDF `<alarm>error</alarm>` with
+  `level="1"` (warning, yellow buzzer) / `level="2"` (alarm, red buzzer).
+  Other libdivecomputer events map to `<alarm>` in `dif_sample_event_to_alarm`
+  (Subsurface-compatible mapping); bookmarks become `<setmarker>`.
+- `src/tests/check_dif.c` — Check-framework tests; write `test_simple.uddf`,
+  `test.uddf` and `test_alarms.uddf`, which `make check` validates against
+  the schema with xmllint.
 
 ## UDDF references
 

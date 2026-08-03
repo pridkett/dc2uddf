@@ -25,3 +25,4 @@ test-driver
 *.trs
 *.bin
 vm_bash_history
+.external-review/

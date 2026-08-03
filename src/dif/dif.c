@@ -130,13 +130,141 @@ dif_sample_t *dif_sample_add_subsample(dif_sample_t *sample, dif_subsample_t *su
 
 dif_subsample_t *dif_subsample_alloc() {
     dif_subsample_t *subsample;
-    subsample = g_malloc(sizeof(dif_subsample_t));
+    subsample = g_malloc0(sizeof(dif_subsample_t));
     subsample->type = DIF_SAMPLE_UNDEFINED;
     return subsample;
 }
 
 void dif_subsample_free(dif_subsample_t *subsample) {
+    switch (subsample->type) {
+    case DIF_SAMPLE_VENDOR:
+        g_free(subsample->value.vendor.data);
+        break;
+    case DIF_SAMPLE_SETMARKER:
+        g_free(subsample->value.setmarker);
+        break;
+    default:
+        break;
+    }
     g_free(subsample);
+}
+
+/**
+ * store a vendor payload on a subsample, deep-copying the data
+ *
+ * libdivecomputer's sample callback passes a pointer into the transient
+ * dive-record buffer, which is gone by serialization time, so the bytes
+ * must be copied here. The copy is released by dif_subsample_free.
+ */
+dif_subsample_t *dif_subsample_set_vendor(dif_subsample_t *subsample, guint type, guint size, gconstpointer data) {
+    subsample->type = DIF_SAMPLE_VENDOR;
+    subsample->value.vendor.type = type;
+    if (size > 0 && data != NULL) {
+        subsample->value.vendor.size = size;
+        subsample->value.vendor.data = g_memdup2(data, size);
+    } else {
+        /* keep size and data consistent so consumers never walk a
+         * non-empty size with a NULL pointer */
+        subsample->value.vendor.size = 0;
+        subsample->value.vendor.data = NULL;
+    }
+    return subsample;
+}
+
+/**
+ * the UDDF 3.2.3 alarmType enumeration tokens, indexed by dif_alarm_type_t
+ */
+static const gchar *_alarmTypeNames[] = {
+    "ascent", "breath", "deco", "error", "link", "microbubbles", "rbt",
+    "skincooling", "surface"
+};
+
+const gchar *dif_alarm_type_name(dif_alarm_type_t type) {
+    if (type < 0 || type >= G_N_ELEMENTS(_alarmTypeNames)) {
+        return NULL;
+    }
+    return _alarmTypeNames[type];
+}
+
+/**
+ * map a dive-computer event to a UDDF alarm kind
+ *
+ * Follows the Subsurface uddf-export mapping (ascent, deco, rbt, surface,
+ * error) plus TRANSMITTER -> link, which is exactly UDDF's meaning for the
+ * token. BOOKMARK intentionally does not map: UDDF has no bookmark alarm
+ * and the serializer emits it as <setmarker> instead. Informational events
+ * (safety stops, gas changes, heading, maxdepth, ...) and warnings without
+ * a clean token (PO2, OLF - possibly "error" one day) return FALSE.
+ *
+ * @return TRUE and sets *alarm when the event maps to a UDDF alarm
+ */
+gboolean dif_sample_event_to_alarm(dif_sample_event_t event, dif_alarm_type_t *alarm) {
+    switch (event) {
+    case DIF_SAMPLE_EVENT_ASCENT:
+        *alarm = DIF_ALARM_ASCENT;
+        return TRUE;
+    case DIF_SAMPLE_EVENT_DECOSTOP:
+    case DIF_SAMPLE_EVENT_VIOLATION:
+        *alarm = DIF_ALARM_DECO;
+        return TRUE;
+    case DIF_SAMPLE_EVENT_CEILING:
+    case DIF_SAMPLE_EVENT_CEILING_SAFETYSTOP:
+    case DIF_SAMPLE_EVENT_UNKNOWN:
+        *alarm = DIF_ALARM_ERROR;
+        return TRUE;
+    case DIF_SAMPLE_EVENT_RBT:
+    case DIF_SAMPLE_EVENT_DIVETIME:
+        *alarm = DIF_ALARM_RBT;
+        return TRUE;
+    case DIF_SAMPLE_EVENT_SURFACE:
+        *alarm = DIF_ALARM_SURFACE;
+        return TRUE;
+    case DIF_SAMPLE_EVENT_TRANSMITTER:
+        *alarm = DIF_ALARM_LINK;
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
+/**
+ * find the sample at an exact timestamp
+ *
+ * @return the sample, or NULL if the dive has no sample at that timestamp
+ */
+dif_sample_t *dif_dive_find_sample(dif_dive_t *dive, guint timestamp) {
+    GList *it;
+    for (it = g_list_first(dive->samples); it != NULL; it = g_list_next(it)) {
+        dif_sample_t *sample = it->data;
+        if (sample->timestamp == timestamp) {
+            return sample;
+        }
+    }
+    return NULL;
+}
+
+/**
+ * attach an alarm to the sample at the given timestamp
+ *
+ * Merges into an existing sample when one exists so the alarm shares its
+ * waypoint; otherwise a new sample is created (callers relying on sample
+ * order should re-run dif_dive_sort_samples, as the serializer does).
+ */
+dif_dive_t *dif_dive_add_alarm(dif_dive_t *dive, guint timestamp, dif_alarm_type_t type, gdouble level, gboolean hasLevel) {
+    dif_sample_t *sample = dif_dive_find_sample(dive, timestamp);
+    dif_subsample_t *subsample;
+    if (sample == NULL) {
+        sample = dif_sample_alloc();
+        sample->timestamp = timestamp;
+        dive = dif_dive_add_sample(dive, sample);
+    }
+    subsample = dif_subsample_alloc();
+    subsample->type = DIF_SAMPLE_ALARM;
+    subsample->value.alarm.type = type;
+    subsample->value.alarm.level = level;
+    subsample->value.alarm.hasLevel = hasLevel;
+    dif_sample_add_subsample(sample, subsample);
+    return dive;
 }
 
 /**
